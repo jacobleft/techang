@@ -1,32 +1,34 @@
-# techang skills
+# techang
 
-Reusable agent skills for Claude Code, OpenCode, Cursor, and other tools supported by the Vercel `skills` CLI.
+**Agent skills** for Claude Code, OpenCode, Cursor — anything the Vercel `skills` CLI supports.
+
+---
 
 ## Install
 
-Install from GitHub:
-
 ```bash
+# All skills
 npx skills add jacobleft/techang
-```
 
-List available skills without installing:
-
-```bash
+# Preview before installing
 npx skills add jacobleft/techang --list
-```
 
-Install one skill only:
-
-```bash
+# One skill only
 npx skills add jacobleft/techang --skill latex-optimizer
 ```
 
-## What is in this repo
+---
 
-This repository uses the standard `skills/` layout expected by the Vercel `skills` ecosystem. Each skill lives in its own directory and includes a `SKILL.md` entrypoint plus any bundled scripts, references, or examples.
+## Skills
 
-```text
+| Skill | What it does |
+|:------|:-------------|
+| **intimate-relationship-guide** | Relationship advice backed by scientific psychology — attraction, communication, conflict, maintenance, breakup recovery |
+| **latex-optimizer** | Noise-free LaTeX compilation for AI agents; auto-detects `texfot`, `pplatex`, `latexmk`, `tectonic` |
+| **latex-sentence-per-line** | Normalizes LaTeX prose to one sentence per line |
+| **ocr-tiered** | Benchmarks PaddleOCR vs Tesseract (`tessdata_best` vs default) on local images and PDFs |
+
+```
 techang/
 ├── README.md
 └── skills/
@@ -36,32 +38,44 @@ techang/
     └── ocr-tiered/
 ```
 
-## Skill catalog
+---
 
-| Skill | Purpose |
-|---|---|
-| `intimate-relationship-guide` | Relationship guidance grounded in scientific psychology, with references for attraction, communication, conflict, maintenance, and breakup recovery. |
-| `latex-optimizer` | Low-noise LaTeX compilation workflow for AI agents, with tool detection and tiered fallback across `texfot`, `pplatex`, `latexmk`, and related commands. |
-| `latex-sentence-per-line` | Finishing workflow for prose-heavy LaTeX files that normalizes edited text into one-sentence-per-line format. |
-| `ocr-tiered` | Repeatable OCR workflow that compares PaddleOCR, Tesseract with `tessdata_best`, and default Tesseract for local images and PDFs. |
-
-## Repository notes
-
-- Skills are stored under `skills/`, which is one of the standard discovery paths used by `npx skills`.
-- Each skill is self-contained and can include helper scripts, examples, and reference material.
-- The GitHub install path works even if a skill is not yet surfaced in the `skills.sh` search index.
-
-## Verification
-
-The repository can be verified with:
+## Verify
 
 ```bash
 npx skills add jacobleft/techang --list
 ```
 
-Expected result: the CLI should discover these four skills:
+---
 
-- `intimate-relationship-guide`
-- `latex-optimizer`
-- `latex-sentence-per-line`
-- `ocr-tiered`
+# techang
+
+**AI 代理技能包**，适用于 Claude Code、OpenCode、Cursor 等 Vercel `skills` CLI 支持的工具。
+
+## 安装
+
+```bash
+# 全部安装
+npx skills add jacobleft/techang
+
+# 预览
+npx skills add jacobleft/techang --list
+
+# 只装一个
+npx skills add jacobleft/techang --skill latex-optimizer
+```
+
+## 技能列表
+
+| 技能 | 功能 |
+|:-----|:-----|
+| **intimate-relationship-guide** | 基于科学心理学的亲密关系指导——吸引力、沟通、冲突、维护、分手恢复 |
+| **latex-optimizer** | AI 代理低噪音 LaTeX 编译；自动检测 `texfot`、`pplatex`、`latexmk`、`tectonic` |
+| **latex-sentence-per-line** | 将 LaTeX 正文规范化为每行一句 |
+| **ocr-tiered** | 本地图片/PDF OCR 对比评测：PaddleOCR vs Tesseract（`tessdata_best` 与默认） |
+
+## 验证
+
+```bash
+npx skills add jacobleft/techang --list
+```
