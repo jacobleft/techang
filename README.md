@@ -26,7 +26,7 @@ npx skills add jacobleft/techang --skill latex-optimizer
 | **intimate-relationship-guide** | Relationship advice backed by scientific psychology — attraction, communication, conflict, maintenance, breakup recovery |
 | **latex-optimizer** | Noise-free LaTeX compilation for AI agents; auto-detects `texfot`, `pplatex`, `latexmk`, `tectonic` |
 | **latex-sentence-per-line** | Normalizes LaTeX prose to one sentence per line |
-| **ocr-tiered** | Benchmarks PaddleOCR vs Tesseract (`tessdata_best` vs default) on local images and PDFs |
+| **ocr-tiered** | Tiered OCR: PaddleOCR (highest accuracy, Python deps) → Tesseract + `tessdata_best` (balanced) → default Tesseract (fast, lightweight) |
 
 ```
 techang/
@@ -72,7 +72,7 @@ npx skills add jacobleft/techang --skill latex-optimizer
 | **intimate-relationship-guide** | 基于科学心理学的亲密关系指导——吸引力、沟通、冲突、维护、分手恢复 |
 | **latex-optimizer** | AI 代理低噪音 LaTeX 编译；自动检测 `texfot`、`pplatex`、`latexmk`、`tectonic` |
 | **latex-sentence-per-line** | 将 LaTeX 正文规范化为每行一句 |
-| **ocr-tiered** | 本地图片/PDF OCR 对比评测：PaddleOCR vs Tesseract（`tessdata_best` 与默认） |
+| **ocr-tiered** | 分层 OCR：PaddleOCR（最高精度，需 Python 依赖）→ Tesseract + `tessdata_best`（平衡）→ 默认 Tesseract（快速、轻量） |
 
 ## 验证
 
