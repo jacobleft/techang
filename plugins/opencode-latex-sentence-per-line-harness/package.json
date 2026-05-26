@@ -1,0 +1,32 @@
+{
+  "name": "opencode-latex-sentence-per-line-harness",
+  "version": "0.1.0",
+  "description": "opencode plugin that automatically rewrites touched LaTeX files to one sentence per line.",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "latex",
+    "tex",
+    "formatter"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.4.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.4.5",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

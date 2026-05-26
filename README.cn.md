@@ -1,6 +1,6 @@
 # techang （特长）
 
-**AI 代理技能包**，适用于 Claude Code、OpenCode、Cursor 等 Vercel `skills` CLI 支持的工具。
+**AI 代理技能包与 opencode 插件**，适用于 Claude Code、OpenCode、Cursor 等 AI 编程工具。
 
 [English](README.md)
 
@@ -33,9 +33,34 @@ npx skills add jacobleft/techang --skill latex-optimizer
 ```
 techang/
 ├── README.md
+├── plugins/
+│   ├── opencode-latex-sentence-per-line-harness/
+│   └── opencode-zotero-citation-guard/
 └── skills/
     ├── intimate-relationship-guide/
     ├── latex-optimizer/
     ├── latex-sentence-per-line/
     └── ocr-tiered/
 ```
+
+---
+
+## OpenCode 插件
+
+| 包名 | 功能 |
+|:-----|:-----|
+| **opencode-zotero-citation-guard** | 为 Zotero 引文、citekey、文献笔记检查、参考文献撤稿检查提供护栏 |
+| **opencode-latex-sentence-per-line-harness** | 在 edit/write/patch 工具修改 `.tex` 文件后，自动改写为每行一句 |
+
+发布后安装：
+
+```json
+{
+  "plugin": [
+    "opencode-zotero-citation-guard",
+    "opencode-latex-sentence-per-line-harness"
+  ]
+}
+```
+
+修改 `opencode.json` 后需要重启 opencode。

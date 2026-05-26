@@ -1,6 +1,6 @@
 # techang （特长）
 
-**Specialty agent skills** for Claude Code, OpenCode, Cursor — anything the Vercel `skills` CLI supports.
+**Specialty agent skills and opencode plugins** for Claude Code, OpenCode, Cursor, and related AI coding tools.
 
 [中文版](README.cn.md)
 
@@ -33,9 +33,34 @@ npx skills add jacobleft/techang --skill latex-optimizer
 ```
 techang/
 ├── README.md
+├── plugins/
+│   ├── opencode-latex-sentence-per-line-harness/
+│   └── opencode-zotero-citation-guard/
 └── skills/
     ├── intimate-relationship-guide/
     ├── latex-optimizer/
     ├── latex-sentence-per-line/
     └── ocr-tiered/
 ```
+
+---
+
+## OpenCode plugins
+
+| Package | What it does |
+|:--------|:-------------|
+| **opencode-zotero-citation-guard** | Guards Zotero citations, citekeys, literature-note checks, and bibliography retraction-check reminders |
+| **opencode-latex-sentence-per-line-harness** | Automatically rewrites touched `.tex` files to one sentence per line after edit/write/patch tools |
+
+Install after publishing:
+
+```json
+{
+  "plugin": [
+    "opencode-zotero-citation-guard",
+    "opencode-latex-sentence-per-line-harness"
+  ]
+}
+```
+
+Restart opencode after changing `opencode.json`.
