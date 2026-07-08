@@ -29,6 +29,7 @@ npx skills add jacobleft/techang --skill latex-optimizer
 | **latex-optimizer** | Noise-free LaTeX compilation for AI agents; auto-detects `texfot`, `pplatex`, `latexmk`, `tectonic` |
 | **latex-sentence-per-line** | Normalizes LaTeX prose to one sentence per line |
 | **ocr-tiered** | Tiered OCR: PaddleOCR (highest accuracy, Python deps) → Tesseract + `tessdata_best` (balanced) → default Tesseract (fast, lightweight) |
+| **wittgenstein-authoring** | Audits and revises reader-facing prose for defensive framing, terminology drift, weak structure, logic jumps, and overclaiming |
 
 ```
 techang/
@@ -40,7 +41,8 @@ techang/
     ├── intimate-relationship-guide/
     ├── latex-optimizer/
     ├── latex-sentence-per-line/
-    └── ocr-tiered/
+    ├── ocr-tiered/
+    └── wittgenstein-authoring/
 ```
 
 ---
