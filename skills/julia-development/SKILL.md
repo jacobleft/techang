@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "write Julia code",
   execution, optional MCP server integration (Kaimon.jl and julia-mcp), and
   JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 4.1.3
+version: 4.1.5
 tags: [Julia, MultipleDispatch, Types, Performance, Environment, Pkg, repld, MCP, JETLS]
 ---
 
@@ -77,6 +77,48 @@ same_type(x, y) = false
 process(x::T) where {T<:Number} = ...     # Type bounds
 ```
 
+### API Design With Dispatch
+
+Prefer generic functions plus typed dispatch over public `Symbol`/`String` mode
+branches when behavior actually changes. Keep symbol keywords only as
+compatibility wrappers or user-facing convenience layers.
+
+```julia
+abstract type ProcessingMode end
+struct FastMode <: ProcessingMode end
+struct AccurateMode <: ProcessingMode end
+
+process(data, ::FastMode) = fast_process(data)
+process(data, ::AccurateMode) = accurate_process(data)
+
+# Compatibility wrapper only when needed.
+function process(data; mode::Symbol=:fast)
+    selected = mode === :fast ? FastMode() :
+               mode === :accurate ? AccurateMode() :
+               throw(ArgumentError("unsupported mode: $mode"))
+    return process(data, selected)
+end
+```
+
+Use shallow abstract type hierarchies for open extension points, concrete
+immutable structs for data, and parametric fields for storage/scalar/backend
+types. Use traits when behavior depends on a capability rather than natural type
+identity.
+
+```julia
+abstract type StorageBackend end
+struct InMemory <: StorageBackend end
+struct OnDisk <: StorageBackend end
+
+struct Dataset{T,B<:StorageBackend}
+    values::Vector{T}
+    backend::B
+end
+
+load(d::Dataset{T,InMemory}) where {T} = d.values
+load(d::Dataset{T,OnDisk}) where {T} = read_from_disk(d)
+```
+
 ---
 
 ## 3. Type System & Performance
@@ -84,10 +126,13 @@ process(x::T) where {T<:Number} = ...     # Type bounds
 → See `references/language-deep-dive.md` for type annotations, type stability, broadcasting fusion, loop optimization, and `Val` types.
 
 **Key rules**:
+- Put performance-critical code inside functions; avoid top-level script logic for reusable package behavior
 - Default to immutable `struct`; use `mutable struct` only when mutation is required
 - Keep functions type-stable: return types should be inferable from input types, not from unpredictable runtime values
+- Avoid abstract fields and abstract element containers in performance-sensitive data; prefer parametric fields such as `Container{T}`
 - Use dotted calls or `@.` for fused broadcasting when it improves clarity and avoids unnecessary temporaries
 - Annotate types for dispatch, invariants, or documentation; concrete argument annotations rarely improve performance by themselves
+- Prefer exported functions as the public interface to a type; direct field access should be API only when documented as API
 
 ---
 
@@ -133,6 +178,48 @@ process([1,2,3])                    # defaults
 process([1,2,3]; normalize=false)   # override
 ```
 
+### Constructors For Object Creation
+
+Prefer constructors over extra constructor-like helper functions when the goal
+is to build an instance of a type. Use outer constructors for alternate input
+forms, defaults, conversion, and ergonomic APIs; use inner constructors only
+when every instance must enforce an invariant.
+
+```julia
+struct Config{T}
+    threshold::T
+    name::String
+
+    function Config(threshold::T, name::AbstractString) where {T<:Real}
+        @assert threshold >= zero(T) "threshold must be nonnegative"
+        return new{T}(threshold, String(name))
+    end
+end
+
+Config(threshold::Real) = Config(threshold, "default")
+Config(; threshold=1.0, name="default") = Config(threshold, name)
+```
+
+Avoid adding `make_config(...)`, `create_config(...)`, or
+`build_config(...)` when `Config(...)` is the natural API. Use a named function
+only when it performs a distinct operation, such as loading from disk,
+discovering environment state, mutating an existing object, or running a
+multi-step workflow.
+
+### Common Macros
+
+Use macros intentionally:
+
+- `@test`, `@testset`, `@test_throws`: test behavior in `test/`, not package logic.
+- `@assert`: check internal invariants during development; do not use it as the only user-facing validation for recoverable input errors.
+- `@views`: avoid copies from slicing when a view is intended.
+- `@.`: fuse broadcasts when it improves clarity and avoids temporaries.
+- `@time`, `@allocated`, `@code_warntype`: quick diagnostics; use `BenchmarkTools.@btime` for serious benchmarking.
+
+Do not introduce macros just to make ordinary function calls look clever. Prefer
+functions unless a macro is needed for syntax, generated code, source-location
+information, testing, diagnostics, or benchmarking support.
+
 ---
 
 ## 5. REPL & Package Management
@@ -167,9 +254,12 @@ pkg> instantiate     # Restore from Manifest.toml
 
 **Quick checklist**:
 - Don't put methods inside `struct` — use external functions with type annotations
+- Don't write `make_*` or `create_*` helpers when an outer constructor is the natural object-building API
 - Don't over-specify types (`Int64`) — let Julia specialize generically
+- Don't encode real polymorphism as large public `if mode == :foo` branches; use typed selectors, traits, or separate methods
 - Avoid type piracy: do not extend functions you don't own on types you don't own. Extending Base or package functions for your own types is normal Julia style.
 - Default to `struct` (immutable) — use `mutable struct` only when needed
+- Keep examples and skill guidance domain-neutral unless the user's current task is domain-specific; prefer examples from data processing, storage backends, plotting backends, parsers, optimizers, or numerical algorithms
 
 ---
 
@@ -188,6 +278,7 @@ repld --fresh --session mypkg julia --project=MyPkg -e 'using Revise; using MyPk
 # Reuse for checks
 repld --session mypkg julia -e 'using Revise; Revise.revise(); import Pkg; Pkg.test(; coverage=false)'
 repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/unit/foo.jl")'
+repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPkg") do; include("test/runtests.jl"); end'
 
 # Diagnose or recover
 repld trace --session mypkg
@@ -197,7 +288,9 @@ repld interrupt --session mypkg
 repld close --session mypkg
 ```
 
-Use `--fresh` when starting a task, after struct/type layout changes, module reorganization, dependency changes, or repeated Revise/world-age symptoms. For ordinary function-body edits, test tweaks, doc edits, and most method additions, reuse the warm session and load/call Revise before checks.
+Use `--fresh` when starting a task, after struct/type layout changes, module reorganization, dependency changes, or repeated Revise/world-age symptoms. Revise can usually hot-reload ordinary function-body edits and many method additions; older Julia versions could not revise `struct` changes, and even on newer versions a fresh session is still the safe recovery path when type layout or world-age behavior looks suspicious.
+
+Use `TestEnv.activate` for interactive or focused test execution when tests need `[extras]`, `[targets]`, or `test/Project.toml` dependencies that are not available in the plain package environment. Do not add `TestEnv` as a package dependency; treat it as a developer tool available from the global/dev environment.
 
 ### repld Session Lifecycle
 
@@ -257,6 +350,24 @@ Optional probes, only when the task needs that capability:
 | Kaimon introspection | `kaimon_ex(e="1+1", q=true)` if the MCP tool is exposed, otherwise `command -v kaimon` |
 | julia-mcp fallback | `julia_list_sessions()` if the MCP tool is exposed |
 | JETLS diagnostics | `command -v jetls && jetls --help 2>&1 \| head -5` |
+
+---
+
+## 9. Julian Review Checklist
+
+Before finishing nontrivial Julia changes, check:
+
+- Does reusable behavior live in functions rather than top-level scripts?
+- Does polymorphism use dispatch, typed selectors, or traits instead of large mode branches?
+- Are public selectors typed when behavior changes, with `Symbol` wrappers only for compatibility?
+- Are object-building APIs expressed as constructors instead of redundant `make_*` functions?
+- Are structs immutable unless mutation is required?
+- Are fields concrete or parametrically typed where performance matters?
+- Are signatures generic enough for `Real`, `AbstractVector`, `StaticArrays`, AD numbers, and unitful values when applicable?
+- Are public APIs exposed through functions rather than undocumented field access?
+- Are macros limited to appropriate roles such as tests, assertions, views, diagnostics, or benchmarking?
+- Are tests runnable through `Pkg.test` and, for focused iteration, through `TestEnv.activate`?
+- Was `Revise.revise()` used before warm-session checks, and was a fresh session used after type/module/dependency changes?
 
 If the preferred probe fails but plain `julia` works, continue with shell Julia or MCP fallback and mention the limitation once. Open install/update recipes only when a required tool is missing, a requested optional tool is missing, or a tool failure points to a known setup issue.
 

@@ -44,6 +44,28 @@ TestEnv.activate("MyPackage") do
 end
 ```
 
+This is useful because `Pkg.test` runs tests in a temporary environment that
+contains the package plus test-only dependencies from `[extras]`/`[targets]` or
+`test/Project.toml`. The plain package environment often does not include those
+dependencies. `TestEnv.activate()` lets you enter an equivalent environment
+interactively for focused test writing and debugging.
+
+Preferred warm-session pattern with `repld`:
+
+```bash
+repld --fresh --session mypkg julia --project=MyPackage -e 'using Revise; using MyPackage; println("ready")'
+repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPackage") do; include("test/runtests.jl"); end'
+```
+
+Use focused includes for tight loops:
+
+```bash
+repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPackage") do; include("test/unit/foo_tests.jl"); end'
+```
+
+Keep `TestEnv` as a developer tool in a global/dev environment; do not add it
+as a dependency of the package under test.
+
 ---
 
 ## Pkg API (Programmatic)
@@ -87,6 +109,20 @@ For scripts:
 ```julia
 julia> includet("myscript.jl")  # Track and reload changes
 ```
+
+### Revise Limits And Restart Rules
+
+Revise is excellent for ordinary method-body edits, new methods, test tweaks,
+and many package-source changes. Use a fresh Julia session after:
+
+- changing struct fields or type hierarchy;
+- moving files/modules or changing `include` order;
+- changing dependencies or environments;
+- repeated world-age, stale-method, or precompile-cache symptoms.
+
+On Julia versions older than 1.12, Revise does not support changes to `struct`
+definitions. Newer versions improve this, but a fresh session remains the safe
+default after type-layout changes in serious package work.
 
 ### Revise.jl with MCP Servers
 
