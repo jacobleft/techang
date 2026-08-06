@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "write Julia code",
   execution, optional MCP server integration (Kaimon.jl and julia-mcp), and
   JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 4.1.5
+version: 4.1.6
 tags: [Julia, MultipleDispatch, Types, Performance, Environment, Pkg, repld, MCP, JETLS]
 ---
 
@@ -280,21 +280,33 @@ repld --session mypkg julia -e 'using Revise; Revise.revise(); import Pkg; Pkg.t
 repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/unit/foo.jl")'
 repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPkg") do; include("test/runtests.jl"); end'
 
+# Version/channel and runtime-shape checks
+repld --session jl112 julia +1.12 -E 'VERSION'
+repld --fresh --session threaded julia -t 4 -E 'Threads.nthreads()'
+repld --fresh --session tempdeps julia --project=@temp -e 'using Pkg; Pkg.add("Example")'
+
 # Diagnose or recover
-repld trace --session mypkg
+repld trace --trace smart --session mypkg
+repld trace --trace full --session mypkg
 repld interrupt --session mypkg
 
 # Close the task session after an implementation or testing phase
 repld close --session mypkg
 ```
 
-Use `--fresh` when starting a task, after struct/type layout changes, module reorganization, dependency changes, or repeated Revise/world-age symptoms. Revise can usually hot-reload ordinary function-body edits and many method additions; older Julia versions could not revise `struct` changes, and even on newer versions a fresh session is still the safe recovery path when type layout or world-age behavior looks suspicious.
+Sessions created from Codex or Claude Code automatically attach to the agent harness and close when that harness exits. Do not pass `--owner-pid` manually for ordinary agent work. Autoclose is a fallback for interrupted or abandoned work, not a replacement for explicitly closing a completed task session. Use `repld free <id | --session=NAME>` only when a session must intentionally outlive the agent; it removes that ownership lease.
+
+Use `--fresh` when starting a task, after struct/type layout changes, module reorganization, dependency changes, thread-count or Julia-channel assumptions, or repeated Revise/world-age symptoms. Revise can usually hot-reload ordinary function-body edits, many method additions, and many changes in dev'd packages. Treat these as untrackable or fresh-session triggers: struct/type redefinition, adding a new `using NewPkg` inside a module when `NewPkg` was absent from `Project.toml` when the session started, and `includet` files/modules that need full re-evaluation but do not set `__revise_mode__ = :eval`.
+
+Use `--trace smart` by default for user/project frames plus nearby boundary frames. Use `--trace full` when package internals, generated code, or Julia runtime frames matter. `repld trace --trace smart --session NAME` shows the last saved traceback without rerunning the failing command; `repld sessions` also exposes short session IDs accepted by `trace`, `interrupt`, and `close`.
 
 Use `TestEnv.activate` for interactive or focused test execution when tests need `[extras]`, `[targets]`, or `test/Project.toml` dependencies that are not available in the plain package environment. Do not add `TestEnv` as a package dependency; treat it as a developer tool available from the global/dev environment.
 
+ReTest is optional and conditional, not a default dependency. On Julia 1.12.x, ReTest 0.3.x is compatible and can be useful for regex-filtered testsets, deferred tests, shuffling, or parallel test execution when the package already uses or explicitly wants that style. ReTest 0.4.x requires Julia 1.13, so do not recommend it for the current Julia 1.12 fleet. Prefer plain `Test`, `Pkg.test`, and `TestEnv.activate` unless ReTest's filtering/deferred-test model materially improves the task.
+
 ### repld Session Lifecycle
 
-Close task-scoped `repld` sessions at the end of each implementation or testing phase, after recording any needed trace output and final command result. This prevents stale Julia processes, old Revise state, loaded manifests, and package images from leaking into the next Comet/OpenSpec phase or unrelated task.
+Close task-scoped `repld` sessions at the end of each implementation or testing phase, after recording any needed trace output and final command result. This prevents stale Julia processes, old Revise state, loaded manifests, and package images from leaking into the next Comet/OpenSpec phase or unrelated task. Codex-created sessions also auto-close when the Codex harness exits; retain explicit closure for normal completion and use autoclose as interruption protection.
 
 Use:
 
