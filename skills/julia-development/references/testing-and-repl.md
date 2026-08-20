@@ -40,7 +40,7 @@ Use TestEnv to activate a package's test environment interactively:
 using TestEnv
 TestEnv.activate("MyPackage") do
     using Test, TestDependencies
-    include("test/runtests.jl")
+    include("test/unit/foo_tests.jl")
 end
 ```
 
@@ -48,13 +48,14 @@ This is useful because `Pkg.test` runs tests in a temporary environment that
 contains the package plus test-only dependencies from `[extras]`/`[targets]` or
 `test/Project.toml`. The plain package environment often does not include those
 dependencies. `TestEnv.activate()` lets you enter an equivalent environment
-interactively for focused test writing and debugging.
+interactively for focused test writing and debugging. Target a selected test
+file or group; do not default to the package's full `test/runtests.jl` runner.
 
 Preferred warm-session pattern with `repld`:
 
 ```bash
 repld --fresh --session mypkg julia --project=MyPackage -e 'using Revise; using MyPackage; println("ready")'
-repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPackage") do; include("test/runtests.jl"); end'
+repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPackage") do; include("test/unit/foo_tests.jl"); end'
 ```
 
 Use focused includes for tight loops:

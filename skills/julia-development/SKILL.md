@@ -7,8 +7,8 @@ description: This skill should be used when the user asks to "write Julia code",
   execution, optional MCP server integration (Kaimon.jl and julia-mcp), and
   JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 4.1.6
-tags: [Julia, MultipleDispatch, Types, Performance, Environment, Pkg, repld, MCP, JETLS]
+version: 4.1.15
+tags: [Julia, MultipleDispatch, Types, Performance, Environment, Pkg, repld, MCP, JETLS, QA]
 ---
 
 # Julia Development Skill
@@ -26,7 +26,7 @@ Shift from class inheritance to multiple dispatch:
 | Methods belong to classes | Functions operate on data |
 | Single dispatch (`this`) | Multiple dispatch (all args) |
 | Inheritance hierarchies | Composition + abstract types |
-| Encapsulation | Modules + naming conventions |
+| Encapsulation | Modules + explicit `public` API declarations (Julia >= 1.11) |
 
 ```julia
 # Separate data from behavior
@@ -105,6 +105,21 @@ immutable structs for data, and parametric fields for storage/scalar/backend
 types. Use traits when behavior depends on a capability rather than natural type
 identity.
 
+For Julia >= 1.11 packages, declare every supported type and generic-function
+binding with `public` near the module header; a public generic function owns its
+supported methods. `public` records API intent without importing the name for
+`using Package`; use `export` only for names that users should receive
+unqualified. Do not encode visibility through `_helper`, `PrivateType`,
+`InternalType`, `TypeImpl`, or similar names when the distinction is merely
+public versus internal. Julia has no hard private bindings: use descriptive
+domain names, declare supported bindings `public`, and leave implementation
+details undeclared as public.
+
+```julia
+public Dataset, load, configure!
+export load
+```
+
 ```julia
 abstract type StorageBackend end
 struct InMemory <: StorageBackend end
@@ -132,7 +147,7 @@ load(d::Dataset{T,OnDisk}) where {T} = read_from_disk(d)
 - Avoid abstract fields and abstract element containers in performance-sensitive data; prefer parametric fields such as `Container{T}`
 - Use dotted calls or `@.` for fused broadcasting when it improves clarity and avoids unnecessary temporaries
 - Annotate types for dispatch, invariants, or documentation; concrete argument annotations rarely improve performance by themselves
-- Prefer exported functions as the public interface to a type; direct field access should be API only when documented as API
+- Declare supported package bindings with `public`; use `export` only when unqualified `using Package` access is intended. Direct field access should be public API only when explicitly declared and documented.
 
 ---
 
@@ -257,6 +272,7 @@ pkg> instantiate     # Restore from Manifest.toml
 - Don't write `make_*` or `create_*` helpers when an outer constructor is the natural object-building API
 - Don't over-specify types (`Int64`) — let Julia specialize generically
 - Don't encode real polymorphism as large public `if mode == :foo` branches; use typed selectors, traits, or separate methods
+- Don't encode visibility with `_` prefixes or `Private`/`Internal`/`Impl` names; for Julia >= 1.11, declare supported bindings with `public` and use normal descriptive names
 - Avoid type piracy: do not extend functions you don't own on types you don't own. Extending Base or package functions for your own types is normal Julia style.
 - Default to `struct` (immutable) — use `mutable struct` only when needed
 - Keep examples and skill guidance domain-neutral unless the user's current task is domain-specific; prefer examples from data processing, storage backends, plotting backends, parsers, optimizers, or numerical algorithms
@@ -267,6 +283,52 @@ pkg> instantiate     # Restore from Manifest.toml
 
 Prefer `repld` for Julia execution when available. It gives long-lived named sessions, works well with Revise, survives ordinary code edits, and makes test iteration reproducible from shell commands. MCP servers are optional supplements for introspection or environments where `repld` is unavailable.
 
+### Import Placement and Review-Case Scripts
+
+Classify the file by the module in which its code executes, then place its
+`using` and `import` statements accordingly:
+
+| Scenario | Where dependency imports belong | Revise |
+|----------|---------------------------------|--------|
+| Package source or code included by a package module | At the top level of the innermost module that directly uses the dependency. An `include`d file executes in its including module, not in `Main`. | Do not add `Revise` to package source. |
+| Temporary script executed as `julia script.jl` | At the top of the script, in `Main`, before setup or executable code. | Add only when the temporary interactive workflow needs hot loading. |
+| Human-facing review-case script executed in `Main` | At the top of the script, before setup or case code. | The first dependency import is `using Revise`, before loading the reviewed package. |
+
+For package code, an outer module's imports do not become bindings in a child
+module. Put an import in the child module even when the parent also uses that
+package.
+
+```julia
+# src/solver/step.jl, included by RiblePackage.Solver
+using LinearAlgebra
+import StaticArrays: SVector
+
+# Solver implementation that uses dot, norm, and SVector
+```
+
+When a temporary script defines a module, imports used by that defined module
+belong inside it; only imports used by the script runner remain in `Main`.
+
+```julia
+# temporary_script.jl, executed in Main
+using Rible
+import CairoMakie
+
+# setup and one-off work
+```
+
+```julia
+# review_cases/shell_preview.jl, executed in Main
+using Revise
+using Rible
+import CairoMakie
+
+# human-facing setup and review case
+```
+
+`Revise` is shared developer tooling, like JET. Do not add it to a reviewed
+case's `Project.toml` or to the package's dependencies solely for this script.
+
 ### repld First Workflow
 
 Use one warm named session per task or package:
@@ -275,10 +337,9 @@ Use one warm named session per task or package:
 # Start once
 repld --fresh --session mypkg julia --project=MyPkg -e 'using Revise; using MyPkg; println("ready")'
 
-# Reuse for checks
-repld --session mypkg julia -e 'using Revise; Revise.revise(); import Pkg; Pkg.test(; coverage=false)'
+# Reuse for focused package-test checks
 repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/unit/foo.jl")'
-repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPkg") do; include("test/runtests.jl"); end'
+repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPkg") do; include("test/unit/foo.jl"); end'
 
 # Version/channel and runtime-shape checks
 repld --session jl112 julia +1.12 -E 'VERSION'
@@ -300,9 +361,9 @@ Use `--fresh` when starting a task, after struct/type layout changes, module reo
 
 Use `--trace smart` by default for user/project frames plus nearby boundary frames. Use `--trace full` when package internals, generated code, or Julia runtime frames matter. `repld trace --trace smart --session NAME` shows the last saved traceback without rerunning the failing command; `repld sessions` also exposes short session IDs accepted by `trace`, `interrupt`, and `close`.
 
-Use `TestEnv.activate` for interactive or focused test execution when tests need `[extras]`, `[targets]`, or `test/Project.toml` dependencies that are not available in the plain package environment. Do not add `TestEnv` as a package dependency; treat it as a developer tool available from the global/dev environment.
+Use `TestEnv.activate` for interactive or focused test execution when tests need `[extras]`, `[targets]`, or `test/Project.toml` dependencies that are not available in the plain package environment. This applies to package-owned test infrastructure such as `Aqua` and `SafeTestsets`, not analyzers or formatters. Use `Pkg.test()` only for a project-selected test-only gate; it may include functional tests, `Aqua`, and `SafeTestsets`, but it must never invoke `JET`, `ExplicitImports`, `Runic`, `JuliaFormatter`, or other shared QA tooling. Do not add `TestEnv` as a package dependency; treat it as a developer tool available from the global/dev environment.
 
-ReTest is optional and conditional, not a default dependency. On Julia 1.12.x, ReTest 0.3.x is compatible and can be useful for regex-filtered testsets, deferred tests, shuffling, or parallel test execution when the package already uses or explicitly wants that style. ReTest 0.4.x requires Julia 1.13, so do not recommend it for the current Julia 1.12 fleet. Prefer plain `Test`, `Pkg.test`, and `TestEnv.activate` unless ReTest's filtering/deferred-test model materially improves the task.
+ReTest is optional and conditional, not a default dependency. On Julia 1.12.x, ReTest 0.3.x is compatible and can be useful for regex-filtered testsets, deferred tests, shuffling, or parallel test execution when the package already uses or explicitly wants that style. ReTest 0.4.x requires Julia 1.13, so do not recommend it for the current Julia 1.12 fleet. Prefer plain `Test`, focused project test selection, and `TestEnv.activate` unless ReTest's filtering/deferred-test model materially improves the task.
 
 ### repld Session Lifecycle
 
@@ -372,16 +433,17 @@ Before finishing nontrivial Julia changes, check:
 - Does reusable behavior live in functions rather than top-level scripts?
 - Does polymorphism use dispatch, typed selectors, or traits instead of large mode branches?
 - Are public selectors typed when behavior changes, with `Symbol` wrappers only for compatibility?
+- Are supported types and functions declared with `public`, with `export` reserved for intended unqualified imports rather than used as the only visibility signal?
 - Are object-building APIs expressed as constructors instead of redundant `make_*` functions?
 - Are structs immutable unless mutation is required?
 - Are fields concrete or parametrically typed where performance matters?
 - Are signatures generic enough for `Real`, `AbstractVector`, `StaticArrays`, AD numbers, and unitful values when applicable?
 - Are public APIs exposed through functions rather than undocumented field access?
 - Are macros limited to appropriate roles such as tests, assertions, views, diagnostics, or benchmarking?
-- Are tests runnable through `Pkg.test` and, for focused iteration, through `TestEnv.activate`?
+- Are package-owned functional and test-only checks runnable through a selected `Pkg.test()` gate and, for focused iteration, through `TestEnv.activate`, with shared analyzers kept out of both test paths?
 - Was `Revise.revise()` used before warm-session checks, and was a fresh session used after type/module/dependency changes?
 
-If the preferred probe fails but plain `julia` works, continue with shell Julia or MCP fallback and mention the limitation once. Open install/update recipes only when a required tool is missing, a requested optional tool is missing, or a tool failure points to a known setup issue.
+If the preferred probe fails but plain `julia` works, continue with shell Julia or MCP fallback and mention the limitation once. Open install/update recipes only when a required tool is missing, a requested optional tool is missing, or a tool failure points to a known setup issue. For package-level QA gates, read `references/package-quality-gates.md`; `PkgTemplates` belongs only to new package/app scaffolding, not quality checks.
 
 ### Capability Matrix
 
@@ -413,7 +475,7 @@ Report missing required tools, or optional tools that were attempted and unavail
 
 ---
 
-## 9. Environment & Dependency Workflow
+## 10. Environment & Dependency Workflow
 
 Before executing Julia code, determine the correct `env_path` and dependency permissions.
 
@@ -431,8 +493,9 @@ Before executing Julia code, determine the correct `env_path` and dependency per
 ### Rules
 
 1. **Use Pkg APIs for dependency graph changes.** Prefer `Pkg.add()` / `Pkg.rm()` / `Pkg.dev()` over hand-editing dependency entries or `Manifest.toml`. Manual `Project.toml` edits are acceptable for package metadata and explicit user-requested fields.
-2. **Do not add deps to a package without approval.** Changing a pkg's dep graph affects downstream users unless the user explicitly requested that dependency change. If a dep is only needed for exploration, use a temp env instead.
+2. **Separate test dependencies from analyzers.** A package-owned test suite may declare `Aqua` and `SafeTestsets` in `[extras]` and the `test` target; they are test-only dependencies and may run under `Pkg.test()`. Do not add `ExplicitImports`, `JET`, `JETLS`, `Runic`, `JuliaFormatter`, `BenchmarkTools`, or `Documenter` to the target package solely for agent QA. Install and run those tools from the active Julia version's default shared environment or a temporary environment, with approval for dependency changes.
 3. **Ephemeral tasks → temp env** (`env_path=nothing`). Don't pollute a pkg's deps for one-off work.
+4. **Keep analyzers outside `Pkg.test()`.** `Pkg.test()` runs package-owned tests and test-only dependencies. Run JET/JETLS diagnostics, ExplicitImports, Runic/JuliaFormatter, Documenter draft builds, and benchmarks as separate shared-tooling commands; do not hide them in a broad test invocation.
 
 ### Detecting Execution Backend
 
@@ -443,7 +506,7 @@ Before executing Julia code, determine the correct `env_path` and dependency per
 
 ---
 
-## 10. Revise.jl and Session Lifecycle
+## 11. Revise.jl and Session Lifecycle
 
 Use Revise in warm sessions, especially with `repld`. Trust Revise for normal function-body edits, tests, examples, documentation, and many new method definitions. Do **not** restart automatically just because a core function changed.
 
@@ -458,7 +521,7 @@ Restart with `repld --fresh` when:
 
 ---
 
-## 11. Visualization & User Verification
+## 12. Visualization & User Verification
 
 Large Julia projects follow an **agent-generate → inspect what is inspectable → user-verify** workflow. Live interactive plots often need user inspection, while saved images or screenshots can sometimes be checked directly by the agent when local visual tools are available.
 
@@ -505,7 +568,7 @@ Key points:
 
 ---
 
-## 12. Documentation
+## 13. Documentation
 
 → **Load `docs-style-preferences` skill** for Julia package documentation (Documenter.jl, docstrings).
 

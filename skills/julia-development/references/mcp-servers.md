@@ -36,13 +36,13 @@ Use a session name that describes the package or task, e.g. `rible-cr`, `solver-
 
 ```bash
 repld --fresh --session mypkg julia --project=. -e 'using Revise; using MyPkg'
-repld --session mypkg julia -e 'using Revise; Revise.revise(); import Pkg; Pkg.test(; coverage=false)'
+repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/unit/foo.jl")'
 repld trace --session mypkg
 repld interrupt --session mypkg
 repld sessions
 ```
 
-Use `--fresh` after type layout changes, dependency changes, module reorganization, or repeated Revise/world-age symptoms. Reuse the warm session for ordinary function-body edits and test tweaks.
+Use `--fresh` after type layout changes, dependency changes, module reorganization, or repeated Revise/world-age symptoms. Reuse the warm session for ordinary function-body edits and selected test files/groups. Do not use a broad `Pkg.test()` as the routine warm-session check; see `package-quality-gates.md` for its test-only boundary.
 
 ---
 
@@ -326,7 +326,7 @@ julia_eval(code="using Kaimon; Gate.serve()", env_path="/my/project")
 ### Pattern 3: Investigation Workflow
 
 ```
-1. repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/runtests.jl")' → Reproduce failure
+1. repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/unit/failing_case.jl")' → Reproduce the selected failure
 2. kaimon_investigate_environment()   → Understand current state when Kaimon is available
 3. kaimon_type_info(name="MyType")    → Inspect types
 4. kaimon_search_methods(query="process") → Find relevant methods
