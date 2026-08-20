@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "write Julia code",
   execution, optional MCP server integration (Kaimon.jl and julia-mcp), and
   JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 4.1.15
+version: 4.1.16
 tags: [Julia, MultipleDispatch, Types, Performance, Environment, Pkg, repld, MCP, JETLS, QA]
 ---
 
@@ -259,7 +259,7 @@ pkg> up              # Update all
 pkg> instantiate     # Restore from Manifest.toml
 ```
 
-→ See `references/testing-and-repl.md` for Pkg API usage, Test.jl, TestEnv, and Revise.jl.
+→ See `references/testing-and-repl.md` for Pkg API usage, Test.jl, TestEnv, aggregate test groups, and Revise.jl.
 
 ---
 
@@ -361,7 +361,7 @@ Use `--fresh` when starting a task, after struct/type layout changes, module reo
 
 Use `--trace smart` by default for user/project frames plus nearby boundary frames. Use `--trace full` when package internals, generated code, or Julia runtime frames matter. `repld trace --trace smart --session NAME` shows the last saved traceback without rerunning the failing command; `repld sessions` also exposes short session IDs accepted by `trace`, `interrupt`, and `close`.
 
-Use `TestEnv.activate` for interactive or focused test execution when tests need `[extras]`, `[targets]`, or `test/Project.toml` dependencies that are not available in the plain package environment. This applies to package-owned test infrastructure such as `Aqua` and `SafeTestsets`, not analyzers or formatters. Use `Pkg.test()` only for a project-selected test-only gate; it may include functional tests, `Aqua`, and `SafeTestsets`, but it must never invoke `JET`, `ExplicitImports`, `Runic`, `JuliaFormatter`, or other shared QA tooling. Do not add `TestEnv` as a package dependency; treat it as a developer tool available from the global/dev environment.
+Use `TestEnv.activate` for interactive or focused test execution when tests need `[extras]`, `[targets]`, or `test/Project.toml` dependencies that are not available in the plain package environment. This applies to package-owned test infrastructure such as `Aqua` and `SafeTestsets`, not analyzers or formatters. For aggregate selectors, run the package test entry point through `TestEnv.activate` and confirm with a fresh project-selected `Pkg.test()` gate. That gate may include functional tests, `Aqua`, and `SafeTestsets`, but it must never invoke `JET`, `ExplicitImports`, `Runic`, `JuliaFormatter`, or other shared QA tooling. Do not add `TestEnv` as a package dependency; treat it as a developer tool available from the global/dev environment. See `references/testing-and-repl.md` and `references/package-quality-gates.md`.
 
 ReTest is optional and conditional, not a default dependency. On Julia 1.12.x, ReTest 0.3.x is compatible and can be useful for regex-filtered testsets, deferred tests, shuffling, or parallel test execution when the package already uses or explicitly wants that style. ReTest 0.4.x requires Julia 1.13, so do not recommend it for the current Julia 1.12 fleet. Prefer plain `Test`, focused project test selection, and `TestEnv.activate` unless ReTest's filtering/deferred-test model materially improves the task.
 
