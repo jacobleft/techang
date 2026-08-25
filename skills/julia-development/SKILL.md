@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "write Julia code",
   execution, optional MCP server integration (Kaimon.jl and julia-mcp), and
   JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 4.1.16
+version: 4.2.0
 tags: [Julia, MultipleDispatch, Types, Performance, Environment, Pkg, repld, MCP, JETLS, QA]
 ---
 
@@ -80,8 +80,10 @@ process(x::T) where {T<:Number} = ...     # Type bounds
 ### API Design With Dispatch
 
 Prefer generic functions plus typed dispatch over public `Symbol`/`String` mode
-branches when behavior actually changes. Keep symbol keywords only as
-compatibility wrappers or user-facing convenience layers.
+branches, `Dict` routing, or large mode switches when behavior actually
+changes. Prefer concrete marker or selector types—even zero-field types—for
+distinct behavior. Keep symbol keywords only as compatibility wrappers or
+user-facing convenience layers.
 
 ```julia
 abstract type ProcessingMode end
@@ -104,6 +106,25 @@ Use shallow abstract type hierarchies for open extension points, concrete
 immutable structs for data, and parametric fields for storage/scalar/backend
 types. Use traits when behavior depends on a capability rather than natural type
 identity.
+
+### State Ownership and Operation Names
+
+A field owns the state named by that field. Do not use
+`Base.getproperty`/`Base.setproperty!` forwarding to manufacture
+pseudo-fields: it hides ownership, weakens local reasoning, and often
+reintroduces symbol-based routing. Expose behavior through ordinary functions;
+keep implementation fields descriptive rather than allowing them to become an
+accidental public API.
+
+Name operations for their actual direction and effect. A one-way update is not
+a synchronization; a validation is not a mutation. Avoid vague nouns such as
+`family` or `capability` when a concrete domain noun states what the
+operation owns or consumes. Do not encode visibility with leading underscores
+or retain compatibility aliases without a real compatibility requirement.
+
+Introduce a coordinating struct only when it owns durable state, invariants, or
+a meaningful lifecycle. Prefer an existing value, a constructor, a tuple, or
+direct dispatch for short-lived coordination.
 
 For Julia >= 1.11 packages, declare every supported type and generic-function
 binding with `public` near the module header; a public generic function owns its
@@ -145,9 +166,28 @@ load(d::Dataset{T,OnDisk}) where {T} = read_from_disk(d)
 - Default to immutable `struct`; use `mutable struct` only when mutation is required
 - Keep functions type-stable: return types should be inferable from input types, not from unpredictable runtime values
 - Avoid abstract fields and abstract element containers in performance-sensitive data; prefer parametric fields such as `Container{T}`
+- Type the fields read in hot loops, including storage, keys, and source collections; avoid `Any` and heterogeneous convenience vectors there. Do not over-engineer a type hierarchy merely to type opaque backend or UI handles that are outside the hot path.
+- Traverse the owning typed collection directly in a hot path. Do not first allocate a generic accessor result or source-reference vector merely to recover dynamic dispatch.
+- When cardinality is known from construction or a query, allocate exact destination storage and use indexed writes. Do not use `push!`, `append!`, `resize!`, repeated growth, shrinking, or compaction during a fixed-layout refresh.
 - Use dotted calls or `@.` for fused broadcasting when it improves clarity and avoids unnecessary temporaries
 - Annotate types for dispatch, invariants, or documentation; concrete argument annotations rarely improve performance by themselves
 - Declare supported package bindings with `public`; use `export` only when unqualified `using Package` access is intended. Direct field access should be public API only when explicitly declared and documented.
+
+### Fixed Layouts, Batches, and Updates
+
+Separate construction-time layout from refreshable state. Identities, topology,
+resource choices, and capacities are fixed facts; positions, values, styles,
+and other payloads are refreshable facts. An ordinary update overwrites
+compatible dynamic state. A layout mismatch uses an explicit reconstruction
+path—never silent reconciliation or resizing of a fixed object.
+
+Batch by the concrete data/component/resource requirements consumed by an
+operation, not by the source object that produced a row. A source is often an
+owner rather than the unit of batched work.
+
+Keep invalidation narrow: distinguish a layout or selection change from a
+content change, update only affected nonempty consumers, and publish coupled
+outputs together so observers cannot see mixed revisions.
 
 ---
 
@@ -155,7 +195,9 @@ load(d::Dataset{T,OnDisk}) where {T} = read_from_disk(d)
 
 ### Bang Convention
 
-Functions modifying arguments end with `!`:
+Use `!` only when a function mutates one of its arguments or other externally
+visible state. Validation, lookup, construction, and pure conversion do not
+take `!`.
 
 - `map(f, arr)` → returns new array
 - `map!(f, dest, arr)` → modifies `dest`
@@ -221,6 +263,15 @@ only when it performs a distinct operation, such as loading from disk,
 discovering environment state, mutating an existing object, or running a
 multi-step workflow.
 
+### Views and Published Storage
+
+Use `@view`/`@views` for internal, non-owning slice operations when a view
+does not escape into an API with stricter storage expectations. Do not assume
+every downstream package, plotting backend, foreign-function boundary, or
+long-lived observable accepts a `SubArray` as a stable published value.
+Materialize an exact concrete container only at that unavoidable boundary; keep
+the fixed staging allocation and internal slice logic otherwise.
+
 ### Common Macros
 
 Use macros intentionally:
@@ -272,9 +323,11 @@ pkg> instantiate     # Restore from Manifest.toml
 - Don't write `make_*` or `create_*` helpers when an outer constructor is the natural object-building API
 - Don't over-specify types (`Int64`) — let Julia specialize generically
 - Don't encode real polymorphism as large public `if mode == :foo` branches; use typed selectors, traits, or separate methods
+- Don't hide state ownership with `getproperty`/`setproperty!` forwarding or call a one-way update `sync`
 - Don't encode visibility with `_` prefixes or `Private`/`Internal`/`Impl` names; for Julia >= 1.11, declare supported bindings with `public` and use normal descriptive names
 - Avoid type piracy: do not extend functions you don't own on types you don't own. Extending Base or package functions for your own types is normal Julia style.
 - Default to `struct` (immutable) — use `mutable struct` only when needed
+- Don't grow or resize a fixed-layout buffer during routine refresh; allocate known capacity and write by index
 - Keep examples and skill guidance domain-neutral unless the user's current task is domain-specific; prefer examples from data processing, storage backends, plotting backends, parsers, optimizers, or numerical algorithms
 
 ---
@@ -329,39 +382,89 @@ import CairoMakie
 `Revise` is shared developer tooling, like JET. Do not add it to a reviewed
 case's `Project.toml` or to the package's dependencies solely for this script.
 
-### repld First Workflow
+### Environment Setup and Hot Reload
 
-Use one warm named session per task or package:
+Never mix package-manager work with hot reload. First prepare the environment,
+then begin the warm execution loop:
+
+1. **Preparation:** activate the target environment and perform only necessary
+   `Pkg` operations such as `instantiate`, `resolve`, `add`, `develop`, or an
+   explicitly approved `update`. When preparing a test environment, call
+   `TestEnv.activate()` before those `Pkg` operations. Do not load `Revise`,
+   the package under development, tests, or source scripts in this phase.
+2. **Warm loop:** once preparation is clean, start a fresh named `repld`
+   session, activate its test or case environment before loading code, then
+   `using Revise`. Do no further `Pkg` operations in that session; a dependency
+   or environment change ends the loop and requires preparation plus a fresh
+   session.
+
+For normal test-driven package work, use the package's interactive test
+environment. `TestEnv.activate()` without a `do` block keeps that environment
+active for the warm session:
 
 ```bash
-# Start once
-repld --fresh --session mypkg julia --project=MyPkg -e 'using Revise; using MyPkg; println("ready")'
+# Preparation only: no Revise, package, tests, or source files.
+julia --project=MyPkg -e 'import Pkg, TestEnv; TestEnv.activate(); Pkg.instantiate(); Pkg.resolve()'
 
-# Reuse for focused package-test checks
-repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/unit/foo.jl")'
-repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPkg") do; include("test/unit/foo.jl"); end'
-
-# Version/channel and runtime-shape checks
-repld --session jl112 julia +1.12 -E 'VERSION'
-repld --fresh --session threaded julia -t 4 -E 'Threads.nthreads()'
-repld --fresh --session tempdeps julia --project=@temp -e 'using Pkg; Pkg.add("Example")'
-
-# Diagnose or recover
-repld trace --trace smart --session mypkg
-repld trace --trace full --session mypkg
-repld interrupt --session mypkg
-
-# Close the task session after an implementation or testing phase
-repld close --session mypkg
+# Warm test-driven loop: TestEnv first, then Revise, then the package.
+repld --fresh --session mypkg-test julia --project=MyPkg -e 'import TestEnv; TestEnv.activate(); using Revise; using MyPkg; println("ready")'
+repld --session mypkg-test julia -e 'Revise.revise(); include("test/unit/foo.jl")'
 ```
+
+When project policy selects a `Pkg.test()` gate, it is a separate fresh process
+with the package project active. `Pkg.test()` creates and owns its temporary
+test environment; never invoke it from a TestEnv-activated or Revise session:
+
+```bash
+repld --fresh --session mypkg-pkgtest julia --project=MyPkg -e 'import Pkg; Pkg.test(; coverage=false)'
+```
+
+For a human-facing review case, do not use `TestEnv`. Give the case its own
+anonymous but persistent `Project.toml` (no package `name` or `uuid`) and
+activate that case directory with `--project=<case-directory>`. Its `[sources]`
+shall declare local packages under review by relative path. Complete its `Pkg`
+setup before loading code, then use Revise in a fresh named session:
+
+```bash
+# Preparation only, in the case's own anonymous Project.toml.
+julia --project=/absolute/path/review_cases/foo -e 'import Pkg; Pkg.instantiate(); Pkg.resolve()'
+
+# No TestEnv and no further Pkg operations after this point.
+repld --fresh --session case-foo julia --project=/absolute/path/review_cases/foo -e 'using Revise; using MyPkg; includet("/absolute/path/review_cases/foo_definitions.jl")'
+repld --session case-foo julia -e 'Revise.revise(); include("/absolute/path/review_cases/run_foo.jl")'
+```
+
+Changes to package `src/` loaded with `using MyPkg` and to files loaded once
+with `includet` are picked up in the warm loop. `--project=@temp` and
+`Pkg.activate(; temp=true)` are for genuinely disposable environments, not
+human-facing review cases.
 
 Sessions created from Codex or Claude Code automatically attach to the agent harness and close when that harness exits. Do not pass `--owner-pid` manually for ordinary agent work. Autoclose is a fallback for interrupted or abandoned work, not a replacement for explicitly closing a completed task session. Use `repld free <id | --session=NAME>` only when a session must intentionally outlive the agent; it removes that ownership lease.
 
-Use `--fresh` when starting a task, after struct/type layout changes, module reorganization, dependency changes, thread-count or Julia-channel assumptions, or repeated Revise/world-age symptoms. Revise can usually hot-reload ordinary function-body edits, many method additions, and many changes in dev'd packages. Treat these as untrackable or fresh-session triggers: struct/type redefinition, adding a new `using NewPkg` inside a module when `NewPkg` was absent from `Project.toml` when the session started, and `includet` files/modules that need full re-evaluation but do not set `__revise_mode__ = :eval`.
+Use `--fresh` when starting a task, after module reorganization, dependency changes, thread-count or Julia-channel assumptions, or repeated Revise/world-age symptoms. Revise can usually hot-reload ordinary function-body edits, many method additions, and many changes in dev'd packages. Treat a struct/type redefinition as a fresh-session trigger by default: Julia 1.12+ can revise structs only when Revise's `revise_structs` preference is deliberately enabled, and that does not make pre-existing values or stale runtime state valid. Adding a new `using NewPkg` inside a module when `NewPkg` was absent from the project when the session started also requires a fresh session.
+
+For a non-package definitions script, call `includet("path/to/definitions.jl")`
+once in the warm session rather than using `include`; its default `:evalmeth` mode
+tracks method definitions without rerunning arbitrary top-level work. Keep
+side-effecting computations in a separate script and use ordinary `include` only
+when deliberately rerunning those computations. Set `__revise_mode__ = :eval`
+only when full top-level re-evaluation is wanted and safe.
 
 Use `--trace smart` by default for user/project frames plus nearby boundary frames. Use `--trace full` when package internals, generated code, or Julia runtime frames matter. `repld trace --trace smart --session NAME` shows the last saved traceback without rerunning the failing command; `repld sessions` also exposes short session IDs accepted by `trace`, `interrupt`, and `close`.
 
-Use `TestEnv.activate` for interactive or focused test execution when tests need `[extras]`, `[targets]`, or `test/Project.toml` dependencies that are not available in the plain package environment. This applies to package-owned test infrastructure such as `Aqua` and `SafeTestsets`, not analyzers or formatters. For aggregate selectors, run the package test entry point through `TestEnv.activate` and confirm with a fresh project-selected `Pkg.test()` gate. That gate may include functional tests, `Aqua`, and `SafeTestsets`, but it must never invoke `JET`, `ExplicitImports`, `Runic`, `JuliaFormatter`, or other shared QA tooling. Do not add `TestEnv` as a package dependency; treat it as a developer tool available from the global/dev environment. See `references/testing-and-repl.md` and `references/package-quality-gates.md`.
+Use `TestEnv.activate` only for interactive, focused test-file execution when
+tests need `[extras]`, `[targets]`, or `test/Project.toml` dependencies that
+are not available in the plain package environment. This applies to
+package-owned test infrastructure such as `Aqua` and `SafeTestsets`, not
+analyzers or formatters. For aggregate selectors, run the package test entry
+point through `TestEnv.activate` during the warm loop and confirm with a fresh
+project-selected `Pkg.test()` gate. Use `Pkg.test()` only in a fresh
+package-project session; it may include functional tests, Aqua, and
+SafeTestsets, but it must never invoke JET, ExplicitImports, Runic,
+JuliaFormatter, or other shared QA tooling. Do not add TestEnv as a package
+dependency; treat it as a developer tool available from the global/dev
+environment. See `references/testing-and-repl.md` and
+`references/package-quality-gates.md`.
 
 ReTest is optional and conditional, not a default dependency. On Julia 1.12.x, ReTest 0.3.x is compatible and can be useful for regex-filtered testsets, deferred tests, shuffling, or parallel test execution when the package already uses or explicitly wants that style. ReTest 0.4.x requires Julia 1.13, so do not recommend it for the current Julia 1.12 fleet. Prefer plain `Test`, focused project test selection, and `TestEnv.activate` unless ReTest's filtering/deferred-test model materially improves the task.
 
@@ -437,9 +540,17 @@ Before finishing nontrivial Julia changes, check:
 - Are object-building APIs expressed as constructors instead of redundant `make_*` functions?
 - Are structs immutable unless mutation is required?
 - Are fields concrete or parametrically typed where performance matters?
+- Does each struct expose actual ownership through fields rather than pseudo-fields forwarded through `getproperty`/`setproperty!`?
+- Are `!` suffixes reserved for actual mutation, and do operation names state their real direction and effect?
+- Does a fixed-layout object separate construction data from refreshable data and reject incompatible layout changes explicitly?
+- Does each hot path traverse native typed collections and avoid `Any`, abstract fields, and heterogeneous temporary source vectors?
+- Where cardinality is known, are buffers exact-sized and filled by indexed writes rather than grown, shrunk, or compacted during routine refresh?
+- Are views confined to internal slice operations, with concrete containers materialized only at downstream publication boundaries that require them?
+- Are batches grouped by compatible consumed data rather than by source ownership, and are selection/layout invalidation and content invalidation updated independently?
 - Are signatures generic enough for `Real`, `AbstractVector`, `StaticArrays`, AD numbers, and unitful values when applicable?
 - Are public APIs exposed through functions rather than undocumented field access?
 - Are macros limited to appropriate roles such as tests, assertions, views, diagnostics, or benchmarking?
+- Do performance-oriented tests verify durable semantics such as identity preservation, exact row counts, fixed-layout rejection, and active-only work rather than brittle global allocation ceilings?
 - Are package-owned functional and test-only checks runnable through a selected `Pkg.test()` gate and, for focused iteration, through `TestEnv.activate`, with shared analyzers kept out of both test paths?
 - Was `Revise.revise()` used before warm-session checks, and was a fresh session used after type/module/dependency changes?
 

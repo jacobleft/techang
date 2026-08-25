@@ -35,10 +35,17 @@ Use a session name that describes the package or task, e.g. `rible-cr`, `solver-
 ### Common Commands
 
 ```bash
-repld --fresh --session mypkg julia --project=. -e 'using Revise; using MyPkg'
-repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/unit/foo.jl")'
-repld trace --session mypkg
-repld interrupt --session mypkg
+# Preparation only: no Revise or target package.
+julia --project=. -e 'import Pkg, TestEnv; TestEnv.activate(); Pkg.instantiate(); Pkg.resolve()'
+
+# Test-driven warm loop: activate TestEnv before loading Revise.
+repld --fresh --session mypkg-test julia --project=. -e 'import TestEnv; TestEnv.activate(); using Revise; using MyPkg'
+repld --session mypkg-test julia -e 'Revise.revise(); include("test/unit/foo.jl")'
+
+# Selected Pkg.test gate: separate fresh package-project session, no TestEnv.
+repld --fresh --session mypkg-pkgtest julia --project=. -e 'import Pkg; Pkg.test(; coverage=false)'
+repld trace --session mypkg-test
+repld interrupt --session mypkg-test
 repld sessions
 ```
 
@@ -301,7 +308,7 @@ Use `repld` for the main warm development session. Add Kaimon when live introspe
 
 ```
 # Main warm execution session
-repld --session mypkg julia --project=. -e 'using Revise; Revise.revise(); using MyPackage; run_analysis()'
+repld --session mypkg julia -e 'Revise.revise(); run_analysis()'
 
 # Optional live introspection when Kaimon tools are available
 kaimon_ex(e="MyPackage.some_loaded_state", q=false)
@@ -326,7 +333,7 @@ julia_eval(code="using Kaimon; Gate.serve()", env_path="/my/project")
 ### Pattern 3: Investigation Workflow
 
 ```
-1. repld --session mypkg julia -e 'using Revise; Revise.revise(); include("test/unit/failing_case.jl")' → Reproduce the selected failure
+1. repld --session mypkg julia -e 'Revise.revise(); include("test/unit/failing_case.jl")' → Reproduce the selected failure
 2. kaimon_investigate_environment()   → Understand current state when Kaimon is available
 3. kaimon_type_info(name="MyType")    → Inspect types
 4. kaimon_search_methods(query="process") → Find relevant methods
@@ -488,8 +495,8 @@ Revise handles method body changes well. It **cannot** handle:
 | New method | Yes | None |
 | Docstring update | Yes | None |
 | Changed function signature | Partially | Restart recommended |
-| New exported symbol | No | Restart |
-| Struct field changes | No | Restart |
+| Export-list change | Adding: usually. Removing before Julia 1.14: no | Restart for a clean caller namespace, especially after removals |
+| Struct field changes | Default: no. Julia 1.12+ with Revise's opt-in `revise_structs` preference: often | Fresh session by default; use opt-in revision only when pre-existing values and stale state cannot affect the check |
 | Module reorganization | No | Restart |
 | Dependency changes | No | Restart |
 | World age edge cases | Sometimes | Restart if issues |

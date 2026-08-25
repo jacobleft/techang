@@ -27,7 +27,7 @@ verification. Keep the main skill short; put detailed gate selection here.
 
 | Change surface | Gate | Command shape | Notes |
 |----------------|------|---------------|-------|
-| Ordinary package change | Test suite | Package-selected test group or file | Do not default to a full suite. Use `Pkg.test()` only for the package-owned functional/test gate selected by project policy. |
+| Ordinary package change | Test suite | Package-selected test group or file | Do not default to a full suite. Use `Pkg.test()` only for the package-owned functional/test gate selected by project policy, from a fresh session with the package project active and never from TestEnv. |
 | Package maintenance | Aqua | `Aqua.test_all(MyPkg)` from the package test target | Aqua is a test-only dependency. It may run through a scoped `Pkg.test()` or `TestEnv.activate` test path when the package owns that gate. |
 | Test structure | SafeTestsets | `@safetestset` in package tests | SafeTestsets is a test-only dependency in the package test target, not shared analysis tooling. |
 | Import or namespace cleanup | ExplicitImports | `ExplicitImports.print_explicit_imports(MyPkg)` or project test integration | Run from the default shared env or temp env unless project-owned tests already cover it. Use for explicit import hygiene, unused imports, and qualified-access cleanup. |
@@ -76,10 +76,11 @@ solely to satisfy agent QA.
 
 1. Focused package test groups/files through `repld` plus `TestEnv.activate`
    while iterating.
-2. Run a project-selected `Pkg.test()` gate only when it contains functional
-   tests and package-owned test-only dependencies such as Aqua/SafeTestsets;
-   it must not invoke JET/JETLS, ExplicitImports, Runic/JuliaFormatter,
-   Documenter, benchmarks, or other shared tooling.
+2. Run a project-selected `Pkg.test()` gate only from a fresh session with the
+   package project active, never from TestEnv or a Revise warm loop. It may
+   contain functional tests and package-owned test-only dependencies such as
+   Aqua/SafeTestsets, but it must not invoke JET/JETLS, ExplicitImports,
+   Runic/JuliaFormatter, Documenter, benchmarks, or other shared tooling.
 3. Run ExplicitImports, JET/JETLS, formatting, and docs draft checks separately
    from shared or temporary tooling environments, never through `Pkg.test()`.
 4. Run CI or coverage checks when the change touches CI, tests, docs, package

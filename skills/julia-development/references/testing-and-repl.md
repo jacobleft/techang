@@ -34,14 +34,14 @@ end
 
 ### TestEnv for Interactive Testing
 
-Use TestEnv to activate a package's test environment interactively:
+After environment preparation, use TestEnv to start an interactive test-driven
+session:
 
 ```julia
 using TestEnv
-TestEnv.activate("MyPackage") do
-    using Test, TestDependencies
-    include("test/unit/foo_tests.jl")
-end
+TestEnv.activate("MyPackage")
+using Revise, MyPackage
+include("test/unit/foo_tests.jl")
 ```
 
 This is useful because `Pkg.test` runs tests in a temporary environment that
@@ -52,17 +52,43 @@ interactively for focused test writing and debugging. Target a selected test
 file or group; do not default to the package's full `test/runtests.jl` runner.
 It does not replace a final fresh `Pkg.test` run for a project-selected gate.
 
-Preferred warm-session pattern with `repld`:
+### Environment Preparation
+
+Prepare a package test environment in a short-lived Julia process. It may load
+`Pkg` and `TestEnv`, but it SHALL NOT load `Revise`, the package, tests, or
+source scripts. Run only required `Pkg` operations; `add`, `develop`, and
+`update` remain explicit dependency changes, not routine setup:
 
 ```bash
-repld --fresh --session mypkg julia --project=MyPackage -e 'using Revise; using MyPackage; println("ready")'
-repld --session mypkg julia -e 'using Revise; Revise.revise(); import TestEnv; TestEnv.activate("MyPackage") do; include("test/unit/foo_tests.jl"); end'
+julia --project=MyPackage -e 'import Pkg, TestEnv; TestEnv.activate(); Pkg.instantiate(); Pkg.resolve()'
+```
+
+### Test-Driven Warm Session
+
+After preparation succeeds, start a new named session. `TestEnv.activate()`
+without a `do` block keeps the package's test environment active. Load Revise
+only after activation, then load the package and run focused tests. Do not run
+`Pkg` operations after Revise is loaded:
+
+```bash
+repld --fresh --session mypkg-test julia --project=MyPackage -e 'import TestEnv; TestEnv.activate(); using Revise; using MyPackage; println("ready")'
+repld --session mypkg-test julia -e 'Revise.revise(); include("test/unit/foo_tests.jl")'
 ```
 
 Use focused includes for tight loops:
 
 ```bash
-repld --session mypkg julia -e 'using Revise, TestEnv; Revise.revise(); TestEnv.activate("MyPackage") do; Base.include(Main, joinpath(pkgdir(MyPackage), "test", "unit", "foo_tests.jl")); end'
+repld --session mypkg-test julia -e 'Revise.revise(); include("test/unit/foo_tests.jl")'
+```
+
+### Selected Pkg.test Gate
+
+`Pkg.test()` is not part of the TestEnv warm loop. It creates its own temporary
+test environment and SHALL run from a separate fresh session with the package
+project active. Do not load TestEnv or Revise in that session:
+
+```bash
+repld --fresh --session mypkg-pkgtest julia --project=MyPackage -e 'import Pkg; Pkg.test(; coverage=false)'
 ```
 
 Keep `TestEnv` as a developer tool in a global/dev environment; do not add it
@@ -199,12 +225,25 @@ For scripts:
 julia> includet("myscript.jl")  # Track and reload changes
 ```
 
+In a warm `repld` session, load a definitions script with `includet` once, then
+call `Revise.revise()` before the focused check that exercises it. Keep
+side-effecting computations in a separate script and re-run that script with
+ordinary `include` when needed. `includet` defaults to `:evalmeth`, so it does
+not rerun arbitrary top-level statements; set `__revise_mode__ = :eval` only
+when full top-level re-evaluation is intentional and safe.
+
+`includet` is non-recursive. For a multi-file source tree, prefer a dev'd
+package loaded with `using` or `import`; do not expect `includet` on one parent
+file to track the files it includes.
+
 ### Revise Limits And Restart Rules
 
 Revise is excellent for ordinary method-body edits, new methods, test tweaks,
 and many package-source changes. Use a fresh Julia session after:
 
-- changing struct fields or type hierarchy;
+- changing struct fields or type hierarchy, unless Julia 1.12+ struct revision
+  was deliberately enabled with Revise's `revise_structs` preference and no
+  pre-existing values or stale state can affect the check;
 - moving files/modules or changing `include` order;
 - changing dependencies or environments;
 - repeated world-age, stale-method, or precompile-cache symptoms.
