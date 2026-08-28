@@ -1,0 +1,8 @@
+[deps]
+WarmWorkflowFixture = "2940b598-591a-47c3-9d9d-e7a80899bc7b"
+
+[sources]
+WarmWorkflowFixture = {path = ".."}
+
+[compat]
+julia = "1.12"

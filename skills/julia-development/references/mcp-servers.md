@@ -30,26 +30,36 @@ command -v repld
 repld --fresh --session julia-check julia -e 'println(VERSION)'
 ```
 
-Use a session name that describes the package or task, e.g. `rible-cr`, `solver-debug`, or `docs-build`.
+Use a session name that describes the package or task, e.g. `package-review`, `solver-debug`, or `docs-build`.
 
 ### Common Commands
 
 ```bash
-# Preparation only: no Revise or target package.
-julia --project=. -e 'import Pkg, TestEnv; TestEnv.activate(); Pkg.instantiate(); Pkg.resolve()'
+# Package runtime warm: package only, no TestEnv or Revise.
+repld --fresh --session mypkg-runtime-warm julia --startup-file=no --project=MyPkg -e 'import Pkg; Pkg.instantiate(); using MyPkg'
+repld close --session mypkg-runtime-warm
 
-# Test-driven warm loop: activate TestEnv before loading Revise.
-repld --fresh --session mypkg-test julia --project=. -e 'import TestEnv; TestEnv.activate(); using Revise; using MyPkg'
-repld --session mypkg-test julia -e 'Revise.revise(); include("test/unit/foo.jl")'
+# Package test-dependency warm: TestEnv, but no Revise, MyPkg, or test files.
+repld --fresh --session mypkg-test-warm julia --startup-file=no --project=MyPkg -e 'import Pkg, TestEnv; TestEnv.activate(); Pkg.instantiate(); Pkg.precompile()'
+repld close --session mypkg-test-warm
 
-# Selected Pkg.test gate: separate fresh package-project session, no TestEnv.
-repld --fresh --session mypkg-pkgtest julia --project=. -e 'import Pkg; Pkg.test(; coverage=false)'
-repld trace --session mypkg-test
-repld interrupt --session mypkg-test
+# Test-driven hot loop: TestEnv before Revise before the package.
+repld --fresh --session mypkg-test-dev julia --startup-file=no --project=MyPkg -e 'import TestEnv; TestEnv.activate(); using Revise; using MyPkg'
+repld --session mypkg-test-dev julia -e 'Revise.revise(); include("test/unit/foo.jl")'
+
+# Selected Pkg.test gate: fresh package-project session, no TestEnv or Revise.
+repld --fresh --session mypkg-pkgtest julia --startup-file=no --project=MyPkg -e 'import Pkg; Pkg.test(; coverage=false)'
+repld trace --session mypkg-test-dev
+repld interrupt --session mypkg-test-dev
 repld sessions
 ```
 
-Use `--fresh` after type layout changes, dependency changes, module reorganization, or repeated Revise/world-age symptoms. Reuse the warm session for ordinary function-body edits and selected test files/groups. Do not use a broad `Pkg.test()` as the routine warm-session check; see `package-quality-gates.md` for its test-only boundary.
+For docs, review cases, and `--project=@temp`, do not use TestEnv; use the
+non-package workflows in `testing-and-repl.md`. Use `--fresh` after type layout
+changes, dependency changes, module reorganization, or repeated Revise/world-age
+symptoms. Reuse the hot session for ordinary function-body edits and selected
+test files/groups. Do not use a broad `Pkg.test()` as the routine warm-session
+check; see `package-quality-gates.md` for its test-only boundary.
 
 ---
 

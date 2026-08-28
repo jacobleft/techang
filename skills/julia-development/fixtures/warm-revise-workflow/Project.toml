@@ -1,0 +1,12 @@
+name = "WarmWorkflowFixture"
+uuid = "2940b598-591a-47c3-9d9d-e7a80899bc7b"
+version = "0.1.0"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
+
+[compat]
+julia = "1.12"

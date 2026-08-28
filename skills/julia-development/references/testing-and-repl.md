@@ -52,34 +52,55 @@ interactively for focused test writing and debugging. Target a selected test
 file or group; do not default to the package's full `test/runtests.jl` runner.
 It does not replace a final fresh `Pkg.test` run for a project-selected gate.
 
-### Environment Preparation
+### Package Runtime and Test-Dependency Warming
 
-Prepare a package test environment in a short-lived Julia process. It may load
-`Pkg` and `TestEnv`, but it SHALL NOT load `Revise`, the package, tests, or
-source scripts. Run only required `Pkg` operations; `add`, `develop`, and
-`update` remain explicit dependency changes, not routine setup:
-
-```bash
-julia --project=MyPackage -e 'import Pkg, TestEnv; TestEnv.activate(); Pkg.instantiate(); Pkg.resolve()'
-```
-
-### Test-Driven Warm Session
-
-After preparation succeeds, start a new named session. `TestEnv.activate()`
-without a `do` block keeps the package's test environment active. Load Revise
-only after activation, then load the package and run focused tests. Do not run
-`Pkg` operations after Revise is loaded:
+For package `src/` and `test/` edits, every process uses
+`--project=MyPackage`. Keep the no-Revise warm processes separate from the
+Revise session: Revise can only track code loaded in the process after Revise
+itself is loaded. The runtime warm loads the package without TestEnv; the test
+warm activates TestEnv and warms test dependencies without loading the package,
+tests, or editable source files.
 
 ```bash
-repld --fresh --session mypkg-test julia --project=MyPackage -e 'import TestEnv; TestEnv.activate(); using Revise; using MyPackage; println("ready")'
-repld --session mypkg-test julia -e 'Revise.revise(); include("test/unit/foo_tests.jl")'
+# Runtime warm: no TestEnv and no Revise.
+repld --fresh --session mypkg-runtime-warm julia --startup-file=no --project=MyPackage -e 'import Pkg; Pkg.instantiate(); using MyPackage'
+repld close --session mypkg-runtime-warm
+
+# Test-dependency warm: no Revise, MyPackage, tests, or source files.
+repld --fresh --session mypkg-test-warm julia --startup-file=no --project=MyPackage -e 'import Pkg, TestEnv; TestEnv.activate(); Pkg.instantiate(); Pkg.precompile()'
+repld close --session mypkg-test-warm
+
+# Hot focused-test loop: TestEnv first, Revise second, package third.
+repld --fresh --session mypkg-test-dev julia --startup-file=no --project=MyPackage -e 'import TestEnv; TestEnv.activate(); using Revise; using MyPackage'
+repld --session mypkg-test-dev julia -e 'Revise.revise(); include("test/unit/foo_tests.jl")'
 ```
+
+Run `Pkg.resolve()` only after an explicit project/dependency edit or manifest
+conflict. Do no Pkg work after Revise is loaded in the hot session. Package
+precompilation does not transfer every JIT specialization into the separate hot
+process, so judge re-test speed from a second focused include in that same
+session, not from its first execution.
 
 Use focused includes for tight loops:
 
 ```bash
-repld --session mypkg-test julia -e 'Revise.revise(); include("test/unit/foo_tests.jl")'
+repld --session mypkg-test-dev julia -e 'Revise.revise(); include("test/unit/foo_tests.jl")'
 ```
+
+For a package whose runner uses an environment selector, set it inside the
+Julia evaluation. Do not use `GROUP=UNIT repld ...`: a persistent daemon session
+does not inherit that per-client shell assignment.
+
+```bash
+repld --session mypkg-test-dev julia -e 'ENV["GROUP"] = "UNIT"; Revise.revise(); Base.include(Main, joinpath(pkgdir(MyPackage), "test", "runtests.jl"))'
+```
+
+Keep one aggregate selector per hot session unless the runner reads `ENV`
+dynamically on every include. A runner that stores its selector in a `const`
+when first included retains that first choice; start a fresh hot session before
+selecting another group. For the tightest loop, prefer a documented standalone
+leaf test over an aggregate runner, because an aggregate may repeatedly create
+test sets and compile their setup.
 
 ### Selected Pkg.test Gate
 
@@ -88,11 +109,49 @@ test environment and SHALL run from a separate fresh session with the package
 project active. Do not load TestEnv or Revise in that session:
 
 ```bash
-repld --fresh --session mypkg-pkgtest julia --project=MyPackage -e 'import Pkg; Pkg.test(; coverage=false)'
+repld --fresh --session mypkg-pkgtest julia --startup-file=no --project=MyPackage -e 'import Pkg; Pkg.test(; coverage=false)'
+```
+
+For a selector-driven fresh gate, set the selector before `Pkg.test()` so its
+isolated subprocess inherits it:
+
+```bash
+repld --fresh --session mypkg-unit-pkgtest julia --startup-file=no --project=MyPackage -e 'ENV["GROUP"] = "UNIT"; import Pkg; Pkg.test(; coverage=false)'
 ```
 
 Keep `TestEnv` as a developer tool in a global/dev environment; do not add it
 as a dependency of the package under test.
+
+### Docs, Review Cases, and Temporary Environments
+
+Documentation and human-facing review cases are non-package workflows, so they
+never use TestEnv. A durable docs or case directory can use a separate
+no-Revise precompile process and a fresh Revise session. Do not load editable
+case definitions before the Revise session.
+
+```bash
+# Docs project: no TestEnv.
+repld --fresh --session docs-warm julia --startup-file=no --project=docs -e 'import Pkg; Pkg.instantiate(); Pkg.precompile()'
+repld close --session docs-warm
+repld --fresh --session docs-dev julia --startup-file=no --project=docs -e 'using Revise; using MyPackage'
+repld --session docs-dev julia -e 'Revise.revise(); include("docs/make.jl")'
+
+# Durable human-review case: no TestEnv.
+repld --fresh --session case1-warm julia --startup-file=no --project=examples/cases/case1 -e 'import Pkg; Pkg.instantiate(); Pkg.precompile()'
+repld close --session case1-warm
+repld --fresh --session case1-dev julia --startup-file=no --project=examples/cases/case1 -e 'using Revise; using MyPackage; includet("examples/cases/case1/definitions.jl")'
+repld --session case1-dev julia -e 'Revise.revise(); include("examples/cases/case1/run.jl")'
+```
+
+`--project=@temp` is process-local. Start one named session, finish Pkg setup
+without Revise or editable code, then load Revise in that same session. A fresh
+`@temp` session requires recreating its environment setup.
+
+```bash
+repld --fresh --session scratch-dev julia --startup-file=no --project=@temp -e 'import Pkg; Pkg.develop(path="MyPackage"); Pkg.instantiate(); Pkg.precompile()'
+repld --session scratch-dev julia -e 'using Revise; using MyPackage; includet("scratch/definitions.jl")'
+repld --session scratch-dev julia -e 'Revise.revise(); include("scratch/run.jl")'
+```
 
 ### Environment-selected aggregate suites
 
@@ -104,54 +163,44 @@ shared analyzers, formatters, documentation builds, coverage tooling, and
 benchmarks stay outside `Pkg.test()` as described in `package-quality-gates.md`.
 
 ```bash
-repld --session mypkg julia -e '
-    using Revise, TestEnv
+repld --session mypkg-test-dev julia -e '
     Revise.revise()
     previous_group = get(ENV, "GROUP", nothing)
     try
         ENV["GROUP"] = "MECHANICS"
-        TestEnv.activate("MyPackage") do
-            Base.include(Main, joinpath(pkgdir(MyPackage), "test", "runtests.jl"))
-        end
+        Base.include(Main, joinpath(pkgdir(MyPackage), "test", "runtests.jl"))
     finally
         isnothing(previous_group) ? delete!(ENV, "GROUP") : (ENV["GROUP"] = previous_group)
     end
 '
 ```
 
-The `do` form restores the prior active project but does not undo module loads,
-mutable state, or environment variables. Restore the selector yourself, as
-above. Use `Base.include` for the test entry point: it evaluates the runner at
-top level and avoids a Julia world-age error caused by importing a newly
-available test-only dependency and immediately calling it inside the callback.
+This reuses the hot session above, where TestEnv is already active and Revise
+loaded `MyPackage`. Restore the selector yourself, as above. Use `Base.include`
+for the test entry point: it evaluates the runner at top level and avoids a
+Julia world-age error caused by importing a newly available test-only dependency
+and immediately calling it inside a callback.
 
 Run a leaf file directly only when it documents its complete standalone harness;
 TestEnv supplies dependencies, not runner imports, helpers, configuration, or
 ordering.
 
-For multi-command interactive debugging, activate TestEnv without a callback,
-use test dependencies in later `repld` evaluations, and restore the prior
-project explicitly:
+For multi-command interactive debugging, use a TestEnv-plus-Revise session and
+keep test dependencies available in later `repld` evaluations:
 
 ```bash
-repld --fresh --session mypkg-debug julia --project=/path/to/MyPackage -e '
-    using TestEnv
-    global TESTENV_RETURN_PROJECT = Base.active_project()
-    TestEnv.activate("MyPackage")
-'
-repld --session mypkg-debug julia -e 'using TestDependencies; include("debug_case.jl")'
-repld --session mypkg-debug julia -e 'import Pkg; Pkg.activate(TESTENV_RETURN_PROJECT)'
+repld --fresh --session mypkg-debug julia --startup-file=no --project=/path/to/MyPackage -e 'import TestEnv; TestEnv.activate(); using Revise; using MyPackage'
+repld --session mypkg-debug julia -e 'Revise.revise(); using TestDependencies; include("debug_case.jl")'
 repld close --session mypkg-debug
 ```
 
-This persistent form is less isolated; do not leave it active across unrelated
-work. Start a fresh session after dependency, type-layout, or module-structure
-changes.
+Do not leave this persistent session active across unrelated work. Start a
+fresh session after dependency, type-layout, or module-structure changes.
 
 Confirm an interactive green group with Pkg's real isolated test subprocess:
 
 ```bash
-repld --fresh --session mypkg-group julia --project=/path/to/MyPackage -e '
+repld --fresh --session mypkg-group julia --startup-file=no --project=/path/to/MyPackage -e '
     ENV["GROUP"] = "MECHANICS"
     import Pkg
     Pkg.test(; coverage=false)
@@ -177,9 +226,12 @@ byte-for-byte replacement for fresh `Pkg.test` evidence.
   comparing a declared change; never a machine-dependent correctness gate.
 
 Use a named `repld` session for one active iteration phase and close it at that
-phase's completion. Start a fresh session after environment or dependency
-changes, type-layout changes, module/include reorganization, changed thread or
-Julia-version assumptions, or repeated Revise/world-age symptoms.
+phase's completion, after its evaluation has returned success or a completion
+marker. A host shell integration can yield while a long `Pkg` evaluation still
+runs; wait or poll before closing the named session. Start a fresh session after
+environment or dependency changes, type-layout changes, module/include
+reorganization, changed thread or Julia-version assumptions, or repeated
+Revise/world-age symptoms.
 
 ---
 
