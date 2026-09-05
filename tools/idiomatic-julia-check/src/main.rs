@@ -406,7 +406,7 @@ fn check_file(path: &Path) -> Result<bool, String> {
 fn main() -> ExitCode {
     let paths: Vec<_> = env::args_os().skip(1).collect();
     if paths.is_empty() {
-        eprintln!("usage: idiomatic-julia-check <design.jl>...");
+        eprintln!("usage: idiomatic-julia-check <pkg_root/docs/design/IdiomaticJulia.jl>...");
         return ExitCode::from(2);
     }
 

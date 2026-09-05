@@ -10,7 +10,13 @@ Method bodies remain ordinary Julia.
 
 ## Note format
 
-Use a `.jl` file containing one quoted expression:
+Every Julia package uses one canonical path for concept-only quoted Julia:
+
+```text
+pkg_root/docs/design/IdiomaticJulia.jl
+```
+
+Do not place these concept notes under `src/`, `test/`, the package root, or another documentation directory. The file contains one quoted expression:
 
 ```julia
 const DESIGN = quote
@@ -59,13 +65,14 @@ cargo +1.98.1 install --locked --path tools/idiomatic-julia-check
 Then check and format the note:
 
 ```sh
-idiomatic-julia-check design/IdiomaticJulia.jl
-fatou format design/IdiomaticJulia.jl
-fatou lint design/IdiomaticJulia.jl
+# Run from pkg_root.
+idiomatic-julia-check docs/design/IdiomaticJulia.jl
+fatou format docs/design/IdiomaticJulia.jl
+fatou lint docs/design/IdiomaticJulia.jl
 ```
 
 The checker uses Fatou's parser and does not start Julia or maintain a second Julia grammar.
 
 ## Scope
 
-Create or update the note when a change introduces or renames important verbs or noun types, or changes how they compose. Do not enumerate every function, method, field, or helper. After validation, inspect the corresponding generics, types, dependencies, `public` declarations, exports, and concrete restrictions in the implementation.
+Create or update `pkg_root/docs/design/IdiomaticJulia.jl` during package design when a change introduces or renames important verbs or noun types, or changes how they compose. Run `idiomatic-julia-check` before implementing that design. Do not enumerate every function, method, field, or helper. After validation, inspect the corresponding generics, types, dependencies, `public` declarations, exports, and concrete restrictions in the implementation.

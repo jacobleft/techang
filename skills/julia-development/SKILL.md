@@ -3,11 +3,11 @@ name: julia-development
 description: This skill should be used when the user asks to "write Julia code",
   "refactor Julia", "explain multiple dispatch", "optimize Julia performance",
   "Julia types", "Julia Pkg management", or "idiomatic Julia". Covers Julian
-  style, type system, performance, Pkg, environment detection, repld-first
-  execution, optional MCP server integration (Kaimon.jl and julia-mcp), and
-  JETLS for static analysis.
+  style, package design with idiomatic-julia-check, type system, performance,
+  Pkg, environment detection, repld-first execution, optional MCP server
+  integration (Kaimon.jl and julia-mcp), and JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 5.1.0
+version: 5.2.0
 tags: [Julia, MultipleDispatch, Types, Performance, Design, Environment, Pkg, repld, MCP, JETLS, QA]
 ---
 
@@ -100,11 +100,11 @@ end
 
 Use shallow abstract type hierarchies for open extension points, concrete immutable structs for data, and parametric fields for storage/scalar/backend types. Use traits when behavior depends on a capability rather than natural type identity.
 
-### Idiomatic Julia Check
+### Package Design Phase
 
-When a change introduces or renames important verbs or noun types, state those few relationships and representative calls in `design/IdiomaticJulia.jl`, then run `idiomatic-julia-check`. Use `result = verb(...)` for returned values and `verb!(...)` for mutation. Do not record every function or method. Routine implementations under established verbs and nouns need no note update.
+When designing a package or changing its important verbs, noun types, or representative compositions, write the concept-only quoted Julia at exactly `pkg_root/docs/design/IdiomaticJulia.jl`. Use `result = verb(...)` for returned values and `verb!(...)` for mutation. Keep only the small package design surface there; do not record every function or method. Routine implementations under established verbs and nouns need no note update.
 
-After the note passes, align the implementation with its generics, types, dependencies, `public` declarations, and exports. See [the notation and checker reference](references/idiomatic-julia-check.md).
+From `pkg_root`, run `idiomatic-julia-check docs/design/IdiomaticJulia.jl` before implementation. After it passes, align the implementation with its generics, types, dependencies, `public` declarations, exports, and concrete restrictions. If the command is unavailable, read [the notation and checker reference](references/idiomatic-julia-check.md) for its install command.
 
 ### State Ownership and Operation Names
 
