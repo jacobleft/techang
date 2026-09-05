@@ -53,7 +53,7 @@ It also permits `if`/`elseif`/`else`, `for`, `while`, `break`, and `continue`. C
 Build and install the Rust executable from the `techang` repository:
 
 ```sh
-cargo install --path skills/julia-development/tools/idiomatic-julia-check
+cargo install --path tools/idiomatic-julia-check
 ```
 
 Then check and format the note:

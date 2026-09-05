@@ -38,13 +38,15 @@ techang/
 ├── plugins/
 │   ├── opencode-latex-sentence-per-line-harness/
 │   └── opencode-zotero-citation-guard/
-└── skills/
-    ├── intimate-relationship-guide/
-    ├── julia-development/
-    ├── latex-optimizer/
-    ├── latex-sentence-per-line/
-    ├── ocr-tiered/
-    └── wittgenstein-authoring/
+├── skills/
+│   ├── intimate-relationship-guide/
+│   ├── julia-development/
+│   ├── latex-optimizer/
+│   ├── latex-sentence-per-line/
+│   ├── ocr-tiered/
+│   └── wittgenstein-authoring/
+└── tools/
+    └── idiomatic-julia-check/
 ```
 
 ---
