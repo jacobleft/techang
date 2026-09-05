@@ -10,10 +10,10 @@ Method bodies remain ordinary Julia.
 
 ## Note format
 
-Every Julia package uses one canonical path for concept-only quoted Julia:
+Every Julia package uses one canonical path for concept-only quoted Julia. Here, `<package-root>` is a placeholder for the package's actual root directory:
 
 ```text
-pkg_root/docs/design/IdiomaticJulia.jl
+<package-root>/docs/design/IdiomaticJulia.jl
 ```
 
 Do not place these concept notes under `src/`, `test/`, the package root, or another documentation directory. The file contains one quoted expression:
@@ -65,7 +65,7 @@ cargo +1.98.1 install --locked --path tools/idiomatic-julia-check
 Then check and format the note:
 
 ```sh
-# Run from pkg_root.
+# Run from the actual package root.
 idiomatic-julia-check docs/design/IdiomaticJulia.jl
 fatou format docs/design/IdiomaticJulia.jl
 fatou lint docs/design/IdiomaticJulia.jl
@@ -75,4 +75,4 @@ The checker uses Fatou's parser and does not start Julia or maintain a second Ju
 
 ## Scope
 
-Create or update `pkg_root/docs/design/IdiomaticJulia.jl` during package design when a change introduces or renames important verbs or noun types, or changes how they compose. Run `idiomatic-julia-check` before implementing that design. Do not enumerate every function, method, field, or helper. After validation, inspect the corresponding generics, types, dependencies, `public` declarations, exports, and concrete restrictions in the implementation.
+During package design, create or update `docs/design/IdiomaticJulia.jl` relative to the actual package root when a change introduces or renames important verbs or noun types, or changes how they compose. Run `idiomatic-julia-check` before implementing that design. Do not enumerate every function, method, field, or helper. After validation, inspect the corresponding generics, types, dependencies, `public` declarations, exports, and concrete restrictions in the implementation.

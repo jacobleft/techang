@@ -22,7 +22,7 @@ From a Julia package root, check its concept-only quoted Julia file:
 idiomatic-julia-check docs/design/IdiomaticJulia.jl
 ```
 
-The standardized package path is `pkg_root/docs/design/IdiomaticJulia.jl`.
+The standardized path is `<package-root>/docs/design/IdiomaticJulia.jl`, where `<package-root>` is a placeholder for the package's actual root directory.
 
 A valid note has one wrapper:
 
