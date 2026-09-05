@@ -5,19 +5,19 @@
 Build it once from the repository root:
 
 ```sh
-cargo build --release --manifest-path skills/julia-development/tools/idiomatic-julia-check/Cargo.toml
+cargo build --release --manifest-path tools/idiomatic-julia-check/Cargo.toml
 ```
 
 Or install the command on `PATH`:
 
 ```sh
-cargo install --path skills/julia-development/tools/idiomatic-julia-check
+cargo install --path tools/idiomatic-julia-check
 ```
 
 Check one or more notes:
 
 ```sh
-skills/julia-development/tools/idiomatic-julia-check/target/release/idiomatic-julia-check design/IdiomaticJulia.jl
+tools/idiomatic-julia-check/target/release/idiomatic-julia-check design/IdiomaticJulia.jl
 ```
 
 A valid note has one wrapper:

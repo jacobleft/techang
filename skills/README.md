@@ -29,7 +29,6 @@ npx skills add jacobleft/techang --list
 Each skill directory contains a `SKILL.md` file as the entrypoint and may also include support files such as:
 
 - `scripts/`
-- `tools/`
 - `references/`
 - `examples/`
 - `assets/`
