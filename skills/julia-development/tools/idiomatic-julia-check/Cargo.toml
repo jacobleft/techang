@@ -1,0 +1,9 @@
+[package]
+name = "idiomatic-julia-check"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Validate a constrained Julia-shaped verb-and-noun design note"
+
+[dependencies]
+fatou-parser = "0.6.0"

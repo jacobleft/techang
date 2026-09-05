@@ -26,6 +26,7 @@ npx skills add jacobleft/techang --skill latex-optimizer
 | Skill | What it does |
 |:------|:-------------|
 | **intimate-relationship-guide** | Relationship advice backed by scientific psychology — attraction, communication, conflict, maintenance, breakup recovery |
+| **julia-development** | Idiomatic Julia development, including multiple dispatch, performance, tooling, and the compiled `idiomatic-julia-check` design validator |
 | **latex-optimizer** | Noise-free LaTeX compilation for AI agents; auto-detects `texfot`, `pplatex`, `latexmk`, `tectonic` |
 | **latex-sentence-per-line** | Normalizes LaTeX prose to one sentence per line |
 | **ocr-tiered** | Tiered OCR: PaddleOCR (highest accuracy, Python deps) → Tesseract + `tessdata_best` (balanced) → default Tesseract (fast, lightweight) |
@@ -39,6 +40,7 @@ techang/
 │   └── opencode-zotero-citation-guard/
 └── skills/
     ├── intimate-relationship-guide/
+    ├── julia-development/
     ├── latex-optimizer/
     ├── latex-sentence-per-line/
     ├── ocr-tiered/

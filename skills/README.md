@@ -19,6 +19,7 @@ npx skills add jacobleft/techang --list
 | Directory | Skill name | Notes |
 |---|---|---|
 | `intimate-relationship-guide/` | `intimate-relationship-guide` | Scientifically grounded intimate relationship guidance with bundled references and examples. |
+| `julia-development/` | `julia-development` | Idiomatic Julia guidance with a compiled verb-and-noun design validator. |
 | `latex-optimizer/` | `latex-optimizer` | AI-friendly LaTeX compilation optimization with detection scripts and fallback tiers. |
 | `latex-sentence-per-line/` | `latex-sentence-per-line` | One-sentence-per-line formatter workflow for prose-oriented LaTeX files. |
 | `ocr-tiered/` | `ocr-tiered` | Tiered OCR comparison workflow for local images and PDFs. |
@@ -28,6 +29,7 @@ npx skills add jacobleft/techang --list
 Each skill directory contains a `SKILL.md` file as the entrypoint and may also include support files such as:
 
 - `scripts/`
+- `tools/`
 - `references/`
 - `examples/`
 - `assets/`
