@@ -2,16 +2,18 @@
 
 `idiomatic-julia-check` validates a deliberately small Julia-shaped design notation. It is a compiled Rust executable backed by Fatou's parser. It parses the file but never evaluates it.
 
+The tool requires and pins Rust 1.98.1.
+
 Build it once from the repository root:
 
 ```sh
-cargo build --release --manifest-path tools/idiomatic-julia-check/Cargo.toml
+cargo +1.98.1 build --release --manifest-path tools/idiomatic-julia-check/Cargo.toml
 ```
 
 Or install the command on `PATH`:
 
 ```sh
-cargo install --path tools/idiomatic-julia-check
+cargo +1.98.1 install --locked --path tools/idiomatic-julia-check
 ```
 
 Check one or more notes:

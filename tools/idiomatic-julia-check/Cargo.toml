@@ -2,7 +2,7 @@
 name = "idiomatic-julia-check"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.98.1"
 description = "Validate a constrained Julia-shaped verb-and-noun design note"
 
 [dependencies]
