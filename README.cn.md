@@ -26,6 +26,7 @@ npx skills add jacobleft/techang --skill latex-optimizer
 | 技能 | 功能 |
 |:-----|:-----|
 | **intimate-relationship-guide** | 基于科学心理学的亲密关系指导——吸引力、沟通、冲突、维护、分手恢复 |
+| **julia-development** | 惯用 Julia 开发指南，涵盖多重派发、性能、工具链及编译型 `idiomatic-julia-check` 设计检查器 |
 | **latex-optimizer** | AI 代理低噪音 LaTeX 编译；自动检测 `texfot`、`pplatex`、`latexmk`、`tectonic` |
 | **latex-sentence-per-line** | 将 LaTeX 正文规范化为每行一句 |
 | **ocr-tiered** | 分层 OCR：PaddleOCR（最高精度，需 Python 依赖）→ Tesseract + `tessdata_best`（平衡）→ 默认 Tesseract（快速、轻量） |
@@ -39,6 +40,7 @@ techang/
 │   └── opencode-zotero-citation-guard/
 └── skills/
     ├── intimate-relationship-guide/
+    ├── julia-development/
     ├── latex-optimizer/
     ├── latex-sentence-per-line/
     ├── ocr-tiered/

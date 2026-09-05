@@ -7,8 +7,8 @@ description: This skill should be used when the user asks to "write Julia code",
   execution, optional MCP server integration (Kaimon.jl and julia-mcp), and
   JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 5.0.0
-tags: [Julia, MultipleDispatch, Types, Performance, Environment, Pkg, repld, MCP, JETLS, QA]
+version: 5.1.0
+tags: [Julia, MultipleDispatch, Types, Performance, Design, Environment, Pkg, repld, MCP, JETLS, QA]
 ---
 
 # Julia Development Skill
@@ -99,6 +99,12 @@ end
 ```
 
 Use shallow abstract type hierarchies for open extension points, concrete immutable structs for data, and parametric fields for storage/scalar/backend types. Use traits when behavior depends on a capability rather than natural type identity.
+
+### Idiomatic Julia Check
+
+When a change introduces or renames important verbs or noun types, state those few relationships and representative calls in `design/IdiomaticJulia.jl`, then run `idiomatic-julia-check`. Use `result = verb(...)` for returned values and `verb!(...)` for mutation. Do not record every function or method. Routine implementations under established verbs and nouns need no note update.
+
+After the note passes, align the implementation with its generics, types, dependencies, `public` declarations, and exports. See [the notation and checker reference](references/idiomatic-julia-check.md).
 
 ### State Ownership and Operation Names
 
