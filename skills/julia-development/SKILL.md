@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "write Julia code",
   Pkg, environment detection, repld-first execution, optional MCP server
   integration (Kaimon.jl and julia-mcp), and JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 5.2.0
+version: 5.2.1
 tags: [Julia, MultipleDispatch, Types, Performance, Design, Environment, Pkg, repld, MCP, JETLS, QA]
 ---
 
@@ -102,9 +102,9 @@ Use shallow abstract type hierarchies for open extension points, concrete immuta
 
 ### Package Design Phase
 
-When designing a package or changing its important verbs, noun types, or representative compositions, write the concept-only quoted Julia at exactly `pkg_root/docs/design/IdiomaticJulia.jl`. Use `result = verb(...)` for returned values and `verb!(...)` for mutation. Keep only the small package design surface there; do not record every function or method. Routine implementations under established verbs and nouns need no note update.
+When designing a package or changing its important verbs, noun types, or representative compositions, write the concept-only quoted Julia at `<package-root>/docs/design/IdiomaticJulia.jl`, where `<package-root>` means the package's actual root directory. Use `result = verb(...)` for returned values and `verb!(...)` for mutation. Keep only the small package design surface there; do not record every function or method. Routine implementations under established verbs and nouns need no note update.
 
-From `pkg_root`, run `idiomatic-julia-check docs/design/IdiomaticJulia.jl` before implementation. After it passes, align the implementation with its generics, types, dependencies, `public` declarations, exports, and concrete restrictions. If the command is unavailable, read [the notation and checker reference](references/idiomatic-julia-check.md) for its install command.
+From the actual package root, run `idiomatic-julia-check docs/design/IdiomaticJulia.jl` before implementation. After it passes, align the implementation with its generics, types, dependencies, `public` declarations, exports, and concrete restrictions. If the command is unavailable, read [the notation and checker reference](references/idiomatic-julia-check.md) for its install command.
 
 ### State Ownership and Operation Names
 
