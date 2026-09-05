@@ -16,11 +16,13 @@ Or install the command on `PATH`:
 cargo +1.98.1 install --locked --path tools/idiomatic-julia-check
 ```
 
-Check one or more notes:
+From a Julia package root, check its concept-only quoted Julia file:
 
 ```sh
-tools/idiomatic-julia-check/target/release/idiomatic-julia-check design/IdiomaticJulia.jl
+idiomatic-julia-check docs/design/IdiomaticJulia.jl
 ```
+
+The standardized package path is `pkg_root/docs/design/IdiomaticJulia.jl`.
 
 A valid note has one wrapper:
 
