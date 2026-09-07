@@ -86,7 +86,19 @@ fn is_typed_noun(node: &SyntaxNode) -> bool {
         return false;
     }
     let children = child_nodes(node);
-    children.len() == 2 && is_name(&children[0]) && is_type_reference(&children[1])
+    children.len() == 2 && is_name_or_dot_access(&children[0]) && is_type_reference(&children[1])
+}
+
+fn is_typed_binding(node: &SyntaxNode) -> bool {
+    if !is_typed_noun(node) {
+        return false;
+    }
+    child_nodes(node).first().is_some_and(is_name)
+}
+
+fn is_simple_value(node: &SyntaxNode) -> bool {
+    is_name_or_dot_access(node)
+        || matches!(node.kind(), SyntaxKind::LITERAL | SyntaxKind::QUOTE_SYM)
 }
 
 fn callable_name(call: &SyntaxNode) -> Option<String> {
@@ -99,6 +111,33 @@ fn callable_name(call: &SyntaxNode) -> Option<String> {
 
 fn is_mutating_call(call: &SyntaxNode) -> bool {
     callable_name(call).is_some_and(|name| name.ends_with('!'))
+}
+
+fn is_noun_argument(expression: &SyntaxNode, typed_allowed: bool) -> bool {
+    is_name_or_dot_access(expression) || (typed_allowed && is_typed_noun(expression))
+}
+
+fn is_keyword_argument(argument: &SyntaxNode, typed_allowed: bool) -> bool {
+    match argument.kind() {
+        SyntaxKind::ARG => {
+            let expressions = child_nodes(argument);
+            if expressions.len() == 1 && expressions[0].kind() == SyntaxKind::ASSIGNMENT_EXPR {
+                let assignment = &expressions[0];
+                let parts = child_nodes(assignment);
+                has_direct_token(assignment, SyntaxKind::EQ)
+                    && parts.len() == 2
+                    && (is_name(&parts[0]) || (typed_allowed && is_typed_binding(&parts[0])))
+                    && is_simple_value(&parts[1])
+            } else {
+                expressions.len() == 1 && is_noun_argument(&expressions[0], typed_allowed)
+            }
+        }
+        SyntaxKind::KEYWORD_ARG => {
+            let children = child_nodes(argument);
+            children.len() == 2 && is_name(&children[0]) && is_simple_value(&children[1])
+        }
+        _ => false,
+    }
 }
 
 fn validate_call(findings: &mut Vec<Finding>, call: &SyntaxNode, typed_allowed: bool) {
@@ -116,55 +155,84 @@ fn validate_call(findings: &mut Vec<Finding>, call: &SyntaxNode, typed_allowed: 
         return;
     };
 
-    let arguments: Vec<_> = arguments.children().collect();
-    if arguments.is_empty() {
+    let mut argument_count = 0;
+    for argument in arguments.children() {
+        match argument.kind() {
+            SyntaxKind::ARG => {
+                argument_count += 1;
+                let expressions = child_nodes(&argument);
+                if expressions.len() != 1 || !is_noun_argument(&expressions[0], typed_allowed) {
+                    reject(
+                        findings,
+                        &argument,
+                        "argument must be a noun value or typed noun",
+                    );
+                }
+            }
+            SyntaxKind::PARAMETERS => {
+                for keyword in argument.children() {
+                    argument_count += 1;
+                    if !is_keyword_argument(&keyword, typed_allowed) {
+                        reject(
+                            findings,
+                            &keyword,
+                            "keyword argument must use a noun value, literal, or typed default",
+                        );
+                    }
+                }
+            }
+            _ => reject(findings, &argument, "invalid call argument"),
+        }
+    }
+    if argument_count == 0 {
         reject(findings, call, "verb must act on at least one noun");
-        return;
     }
-    if arguments
-        .iter()
-        .any(|argument| argument.kind() != SyntaxKind::ARG)
-    {
+}
+
+fn annotated_call(annotation: &SyntaxNode) -> Option<(SyntaxNode, SyntaxNode)> {
+    if annotation.kind() != SyntaxKind::TYPE_ANNOTATION {
+        return None;
+    }
+    let children = child_nodes(annotation);
+    (children.len() == 2 && children[0].kind() == SyntaxKind::CALL_EXPR)
+        .then(|| (children[0].clone(), children[1].clone()))
+}
+
+fn validate_mutation_assignment(findings: &mut Vec<Finding>, assignment: &SyntaxNode) {
+    let children = child_nodes(assignment);
+    if children.len() != 2 {
         reject(
             findings,
-            call,
-            "keyword and parameter arguments are not allowed",
+            assignment,
+            "mutation assignment must have a target and value",
         );
         return;
     }
-
-    let expressions: Vec<_> = arguments
-        .iter()
-        .filter_map(|argument| child_nodes(argument).into_iter().next())
-        .collect();
-    if expressions.len() != arguments.len() {
-        reject(findings, call, "every argument must contain one noun");
-        return;
-    }
-
-    let all_typed = expressions.iter().all(is_typed_noun);
-    let all_values = expressions.iter().all(is_name_or_dot_access);
-    if all_typed && !typed_allowed {
+    if !is_name_or_dot_access(&children[0]) {
         reject(
             findings,
-            call,
-            "typed nouns are not allowed in this control expression",
+            &children[0],
+            "mutation target must be a noun value or owned field",
         );
-    } else if !all_typed && !all_values {
+    }
+    let value = &children[1];
+    if value.kind() == SyntaxKind::CALL_EXPR {
+        validate_call(findings, value, false);
+    } else if !is_simple_value(value) {
         reject(
             findings,
-            call,
-            "arguments must be either all typed nouns or all noun-value names",
+            value,
+            "mutation value must be a simple noun value, literal, or verb call",
         );
     }
 }
 
-fn validate_assignment(findings: &mut Vec<Finding>, assignment: &SyntaxNode) {
+fn validate_result_assignment(findings: &mut Vec<Finding>, assignment: &SyntaxNode) {
     if !has_direct_token(assignment, SyntaxKind::EQ) {
         reject(
             findings,
             assignment,
-            "only native `=` assignment is allowed",
+            "assignment must use `=`, `.=` or `+=`",
         );
         return;
     }
@@ -177,21 +245,38 @@ fn validate_assignment(findings: &mut Vec<Finding>, assignment: &SyntaxNode) {
     let result = &children[0];
     let value = &children[1];
 
-    if !is_name(result) && !is_typed_noun(result) {
+    if !is_name(result) && !is_typed_binding(result) {
         reject(findings, result, "result must be a noun-value name");
     }
-    if value.kind() != SyntaxKind::CALL_EXPR {
+    let (call, return_type) = if value.kind() == SyntaxKind::CALL_EXPR {
+        (value.clone(), None)
+    } else if let Some((call, return_type)) = annotated_call(value) {
+        (call, Some(return_type))
+    } else {
         reject(findings, value, "assignment value must be a verb call");
         return;
-    }
+    };
 
-    validate_call(findings, value, true);
-    if is_mutating_call(value) {
+    if return_type.is_some_and(|return_type| !is_type_reference(&return_type)) {
+        reject(findings, value, "return annotation must name a noun type");
+    }
+    validate_call(findings, &call, true);
+    if is_mutating_call(&call) {
         reject(
             findings,
-            value,
+            &call,
             "call a mutating `verb!` directly instead of assigning its result",
         );
+    }
+}
+
+fn validate_assignment(findings: &mut Vec<Finding>, assignment: &SyntaxNode) {
+    if has_direct_token(assignment, SyntaxKind::DOT_EQ)
+        || has_direct_token(assignment, SyntaxKind::PLUS_EQ)
+    {
+        validate_mutation_assignment(findings, assignment);
+    } else {
+        validate_result_assignment(findings, assignment);
     }
 }
 
@@ -259,13 +344,32 @@ fn validate_if(findings: &mut Vec<Finding>, expression: &SyntaxNode) {
     }
 }
 
+fn is_binding_pattern(node: &SyntaxNode) -> bool {
+    if is_name(node) {
+        return true;
+    }
+    if node.kind() != SyntaxKind::TUPLE_EXPR {
+        return false;
+    }
+    let elements: Vec<_> = node.children().collect();
+    !elements.is_empty()
+        && elements.iter().all(|element| {
+            element.kind() == SyntaxKind::ARG
+                && child_nodes(element).first().is_some_and(is_binding_pattern)
+        })
+}
+
 fn validate_for(findings: &mut Vec<Finding>, expression: &SyntaxNode) {
     for child in expression.children() {
         match child.kind() {
             SyntaxKind::FOR_BINDING => {
                 let binding = child_nodes(&child);
-                if binding.len() != 2 || !is_name(&binding[0]) {
-                    reject(findings, &child, "for must bind one noun-value name");
+                if binding.len() != 2 || !is_binding_pattern(&binding[0]) {
+                    reject(
+                        findings,
+                        &child,
+                        "for must bind a noun name or tuple of noun names",
+                    );
                 } else {
                     validate_control_value(findings, &binding[1], "iteration source");
                 }
@@ -283,6 +387,29 @@ fn validate_while(findings: &mut Vec<Finding>, expression: &SyntaxNode) {
             SyntaxKind::BLOCK => validate_block(findings, &child),
             _ => reject(findings, &child, "invalid while expression"),
         }
+    }
+}
+
+fn validate_type_annotation(findings: &mut Vec<Finding>, annotation: &SyntaxNode) {
+    let children = child_nodes(annotation);
+    if children.len() != 2 || !is_type_reference(&children[1]) {
+        reject(
+            findings,
+            annotation,
+            "type annotation must name a noun type",
+        );
+        return;
+    }
+    if children[0].kind() == SyntaxKind::CALL_EXPR {
+        validate_call(findings, &children[0], true);
+    } else if children[0].kind() == SyntaxKind::BINARY_EXPR && is_name_or_dot_access(&children[0]) {
+        // `owner.field::FieldNoun` records which object owns a field.
+    } else {
+        reject(
+            findings,
+            &children[0],
+            "type annotation must describe a verb return or owned field",
+        );
     }
 }
 
@@ -305,6 +432,7 @@ fn validate_statement(findings: &mut Vec<Finding>, statement: &SyntaxNode) {
         SyntaxKind::BINARY_EXPR if is_name_or_dot_access(statement) => {}
         SyntaxKind::BINARY_EXPR => validate_subtype(findings, statement),
         SyntaxKind::CALL_EXPR => validate_call(findings, statement, true),
+        SyntaxKind::TYPE_ANNOTATION => validate_type_annotation(findings, statement),
         SyntaxKind::ASSIGNMENT_EXPR => validate_assignment(findings, statement),
         SyntaxKind::FUNCTION_DEF => {}
         SyntaxKind::IF_EXPR => validate_if(findings, statement),
@@ -562,11 +690,35 @@ end
     }
 
     #[test]
+    fn accepts_extended_surface_notation() {
+        let source = r#"
+const SURFACE = quote
+    verb(a::NounA, b; option::OptionNoun = default)::ResultNoun
+    result = verb(a::NounA, b; option = settings.option, mode = :fast)::ResultNoun
+    owner.field::FieldNoun
+
+    for (key, value) in pairs(source)
+        update!(destination, key, value; mode = settings.mode)
+    end
+
+    destination .= source.values
+    owner.field += increment
+end
+"#;
+
+        assert_eq!(messages(source), Vec::<String>::new());
+    }
+
+    #[test]
     fn rejects_expressions_outside_the_subset() {
         let cases = [
             ("value = a + b", "assignment value must be a verb call"),
-            ("value = verb(other(a), b)", "arguments must be either"),
-            ("verb(a[1])", "arguments must be either"),
+            ("value = verb(other(a), b)", "argument must be"),
+            ("verb(a[1])", "argument must be"),
+            (
+                "verb(a; option = other(b))",
+                "keyword argument must use a noun value",
+            ),
             (
                 "struct Container\n value\n end",
                 "outside the idiomatic Julia note subset",
@@ -595,6 +747,16 @@ end
                 "expected assigned mutating call to fail: {call}"
             );
         }
+    }
+
+    #[test]
+    fn rejects_other_assignment_operators() {
+        let source = "const DESIGN = quote\ntarget *= value\nend\n";
+        assert!(
+            messages(source)
+                .iter()
+                .any(|message| message.contains("assignment must use `=`, `.=` or `+=`"))
+        );
     }
 
     #[test]
