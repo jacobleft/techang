@@ -1,9 +1,18 @@
-const DESIGN = quote
+# Noun relationships
+const NOUNS = quote
     SpecificNoun <: GeneralNoun
+end
 
+#=
+Verb declarations may use another quoted block.
+=#
+const VERBS = quote
     result::ResultNoun = verb(a::NounA, b::NounB)
     mutate!(a::NounA, b::NounB)
+end
 
+# Representative composition may use a bare quote.
+quote
     result = verb(a, b)
     mutate!(a, b)
 

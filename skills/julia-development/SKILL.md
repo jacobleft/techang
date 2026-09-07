@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "write Julia code",
   Pkg, environment detection, repld-first execution, optional MCP server
   integration (Kaimon.jl and julia-mcp), and JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 5.2.1
+version: 5.2.2
 tags: [Julia, MultipleDispatch, Types, Performance, Design, Environment, Pkg, repld, MCP, JETLS, QA]
 ---
 

@@ -24,16 +24,28 @@ idiomatic-julia-check docs/design/IdiomaticJulia.jl
 
 The standardized path is `<package-root>/docs/design/IdiomaticJulia.jl`, where `<package-root>` is a placeholder for the package's actual root directory.
 
-A valid note has one wrapper:
+A valid note contains one or more quoted blocks. A block may be bare or labeled with any const name, and line or block comments may appear anywhere:
 
 ```julia
-const DESIGN = quote
+# Noun relationships
+const NOUNS = quote
     SpecificNoun <: GeneralNoun
+end
+
+# Verb declarations
+const VERBS = quote
     result::ResultNoun = verb(a::NounA, b::NounB)
+    mutate!(a, b)
+end
+
+# Representative composition
+quote
     result = verb(a, b)
     mutate!(a, b)
 end
 ```
+
+Every non-comment top-level item must be either `quote ... end` or `const NAME = quote ... end`. Each quoted body is checked independently against the same restricted notation.
 
 Supported control flow is `if`/`elseif`/`else`, `for`, `while`, `break`, and `continue`. Conditions and iteration sources are noun names, booleans, or verb calls.
 
