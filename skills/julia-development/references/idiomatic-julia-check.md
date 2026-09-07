@@ -70,6 +70,21 @@ PackageName.verb!(object.state, context.cache.value)
 result::PackageName.ResultNoun = PackageName.verb(input::PackageName.InputNoun)
 ```
 
+The notation also accepts return annotations, mixed typed and value arguments, keyword arguments, owned-field annotations, tuple loop bindings, and mutation assignments:
+
+```julia
+verb(a::NounA, b; option::OptionNoun = default)::ResultNoun
+result = verb(a::NounA, b; option = settings.option, mode = :fast)::ResultNoun
+owner.field::FieldNoun
+
+for (key, value) in pairs(source)
+    update!(destination, key, value; mode = settings.mode)
+end
+
+destination .= source.values
+owner.field += increment
+```
+
 A long-form function definition is an algorithm block:
 
 ```julia

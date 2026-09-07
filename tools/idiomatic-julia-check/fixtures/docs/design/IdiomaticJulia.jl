@@ -19,6 +19,20 @@ const DOTTED = quote
     result::Toolkit.ResultNoun = Toolkit.verb(a::Toolkit.NounA, b::Toolkit.NounB)
 end
 
+# Extended native Julia notation
+const EXTENDED = quote
+    verb(a::NounA, b; option::OptionNoun = default)::ResultNoun
+    result = verb(a::NounA, b; option = settings.option, mode = :fast)::ResultNoun
+    owner.field::FieldNoun
+
+    for (key, value) in pairs(source)
+        update!(destination, key, value; mode = settings.mode)
+    end
+
+    destination .= source.values
+    owner.field += increment
+end
+
 # Ordinary Julia algorithm body
 const ALGORITHM = quote
     function accumulate!(destination, workspace, item::Item{Family})

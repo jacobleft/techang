@@ -34,7 +34,7 @@ end
 
 # Verb declarations
 const VERBS = quote
-    result::ResultNoun = verb(a::NounA, b::NounB)
+    verb(a::NounA, b; option::OptionNoun = default)::ResultNoun
     mutate!(a, b)
 end
 
@@ -56,6 +56,21 @@ PackageName.verb!(object.state, context.cache.value)
 result::PackageName.ResultNoun = PackageName.verb(input::PackageName.InputNoun)
 ```
 
+Return annotations, mixed typed and value arguments, keywords, owned fields, tuple loop bindings, and mutation assignments are accepted:
+
+```julia
+verb(a::NounA, b; option::OptionNoun = default)::ResultNoun
+result = verb(a::NounA, b; option = settings.option, mode = :fast)::ResultNoun
+owner.field::FieldNoun
+
+for (key, value) in pairs(source)
+    update!(destination, key, value; mode = settings.mode)
+end
+
+destination .= source.values
+owner.field += increment
+```
+
 Long-form function definitions are accepted as algorithm blocks:
 
 ```julia
@@ -73,6 +88,6 @@ Fatou checks the syntax of an algorithm block, while `idiomatic-julia-check` lea
 
 Supported control flow is `if`/`elseif`/`else`, `for`, `while`, `break`, and `continue`. Conditions and iteration sources are noun values, including dot access, booleans, or verb calls.
 
-Outside function definitions, arbitrary expressions, nested calls, index arguments, macros, type definitions, keyword arguments, and assignment from `verb!` are rejected.
+Outside function definitions, arbitrary expressions, nested calls, index arguments, macros, type definitions, unsupported assignment operators, and binding a result from `verb!` with plain `=` are rejected.
 
 Exit status is `0` when every input is valid, `1` for an invalid or unreadable input, and `2` when no path is supplied. Diagnostics use `path:line:column: message`.
