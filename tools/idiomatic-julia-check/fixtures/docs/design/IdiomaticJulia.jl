@@ -11,6 +11,21 @@ const VERBS = quote
     mutate!(a::NounA, b::NounB)
 end
 
+# Dotted access, including package qualification and object fields
+const DOTTED = quote
+    Toolkit.AbstractNoun
+    Toolkit.ConcreteNoun(a)
+    Toolkit.mutate!(a.state, b.cache.value)
+    result::Toolkit.ResultNoun = Toolkit.verb(a::Toolkit.NounA, b::Toolkit.NounB)
+end
+
+# Ordinary Julia algorithm body
+const ALGORITHM = quote
+    function accumulate!(destination, workspace, item::Item{Family})
+        kernel!(destination, workspace.cache, item.data)
+    end
+end
+
 # Representative composition may use a bare quote.
 quote
     result = verb(a, b)

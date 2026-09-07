@@ -45,10 +45,34 @@ quote
 end
 ```
 
-Every non-comment top-level item must be either `quote ... end` or `const NAME = quote ... end`. Each quoted body is checked independently against the same restricted notation.
+Every non-comment top-level item must be either `quote ... end` or `const NAME = quote ... end`. Each quoted body is checked independently.
 
-Supported control flow is `if`/`elseif`/`else`, `for`, `while`, `break`, and `continue`. Conditions and iteration sources are noun names, booleans, or verb calls.
+Dot access is accepted for noun values, callables, and type references. Module qualification is one use of the same syntax:
 
-Arbitrary expressions, nested calls, property and index access, qualified callees, macros, definitions, keyword arguments, and assignment from `verb!` are rejected.
+```julia
+Rible.AbstractStructure
+Rible.Structure(nodes)
+Rible.execute!(structure.state, body.cache.d)
+structure::Rible.AbstractStructure = Rible.build(nodes::Rible.Nodes)
+```
+
+Long-form function definitions are accepted as algorithm blocks:
+
+```julia
+function projector!(destination, workspace, body::CorotationalBody{Beam2Family})
+    beam2_variation!(
+        destination,
+        workspace.frame_variation,
+        workspace.frame,
+        body.cache.d,
+    )
+end
+```
+
+Fatou checks the syntax of an algorithm block, while `idiomatic-julia-check` leaves its body as ordinary Julia. The restricted notation still applies to statements outside function definitions.
+
+Supported control flow is `if`/`elseif`/`else`, `for`, `while`, `break`, and `continue`. Conditions and iteration sources are noun values, including dot access, booleans, or verb calls.
+
+Outside function definitions, arbitrary expressions, nested calls, index arguments, macros, type definitions, keyword arguments, and assignment from `verb!` are rejected.
 
 Exit status is `0` when every input is valid, `1` for an invalid or unreadable input, and `2` when no path is supplied. Diagnostics use `path:line:column: message`.
