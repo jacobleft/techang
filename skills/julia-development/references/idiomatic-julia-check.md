@@ -64,21 +64,21 @@ It also permits `if`/`elseif`/`else`, `for`, `while`, `break`, and `continue`. C
 Dot access is part of the checked notation for noun values, callables, and type references. This covers object fields and chains such as `body.cache.d`; module qualification is one use of the same syntax:
 
 ```julia
-Rible.AbstractStructure
-Rible.Structure(nodes)
-Rible.execute!(structure.state, body.cache.d)
-structure::Rible.AbstractStructure = Rible.build(nodes::Rible.Nodes)
+PackageName.AbstractNoun
+PackageName.ConcreteNoun(items)
+PackageName.verb!(object.state, context.cache.value)
+result::PackageName.ResultNoun = PackageName.verb(input::PackageName.InputNoun)
 ```
 
 A long-form function definition is an algorithm block:
 
 ```julia
-function projector!(destination, workspace, body::CorotationalBody{Beam2Family})
-    beam2_variation!(
+function transform!(destination, workspace, item::ConcreteNoun{Variant})
+    combine!(
         destination,
-        workspace.frame_variation,
-        workspace.frame,
-        body.cache.d,
+        workspace.intermediate,
+        workspace.parameters,
+        item.data,
     )
 end
 ```
