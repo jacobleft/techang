@@ -59,7 +59,31 @@ result = verb(a, b)
 verb!(a, b)
 ```
 
-It also permits `if`/`elseif`/`else`, `for`, `while`, `break`, and `continue`. Conditions and iteration sources are noun names, booleans, or verb calls. Other Julia constructs are rejected.
+It also permits `if`/`elseif`/`else`, `for`, `while`, `break`, and `continue`. Conditions and iteration sources are noun values, including dot access, booleans, or verb calls. Other note-level constructs are rejected unless they occur inside an algorithm block described below.
+
+Dot access is part of the checked notation for noun values, callables, and type references. This covers object fields and chains such as `body.cache.d`; module qualification is one use of the same syntax:
+
+```julia
+Rible.AbstractStructure
+Rible.Structure(nodes)
+Rible.execute!(structure.state, body.cache.d)
+structure::Rible.AbstractStructure = Rible.build(nodes::Rible.Nodes)
+```
+
+A long-form function definition is an algorithm block:
+
+```julia
+function projector!(destination, workspace, body::CorotationalBody{Beam2Family})
+    beam2_variation!(
+        destination,
+        workspace.frame_variation,
+        workspace.frame,
+        body.cache.d,
+    )
+end
+```
+
+Fatou checks the syntax of the whole algorithm block. Its body is ordinary Julia and is not restricted to the note-level grammar. The restricted grammar continues to apply outside function definitions.
 
 ## Checker
 

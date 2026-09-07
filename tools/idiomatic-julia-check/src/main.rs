@@ -33,6 +33,26 @@ fn is_name(node: &SyntaxNode) -> bool {
     node.kind() == SyntaxKind::NAME
 }
 
+fn is_name_or_dot_access(node: &SyntaxNode) -> bool {
+    if is_name(node) {
+        return true;
+    }
+    if node.kind() != SyntaxKind::BINARY_EXPR || !has_direct_token(node, SyntaxKind::DOT) {
+        return false;
+    }
+    let parts = child_nodes(node);
+    parts.len() == 2 && is_name_or_dot_access(&parts[0]) && is_name(&parts[1])
+}
+
+fn terminal_segment(node: &SyntaxNode) -> Option<String> {
+    if is_name(node) {
+        return Some(node.text().to_string());
+    }
+    is_name_or_dot_access(node)
+        .then(|| child_nodes(node).last().and_then(terminal_segment))
+        .flatten()
+}
+
 fn is_type_reference(node: &SyntaxNode) -> bool {
     match node.kind() {
         SyntaxKind::NAME => true,
@@ -49,6 +69,9 @@ fn is_type_reference(node: &SyntaxNode) -> bool {
                 })
         }
         SyntaxKind::BINARY_EXPR => {
+            if is_name_or_dot_access(node) {
+                return true;
+            }
             let operands = child_nodes(node);
             has_direct_token(node, SyntaxKind::SUBTYPE)
                 && operands.len() == 2
@@ -66,24 +89,21 @@ fn is_typed_noun(node: &SyntaxNode) -> bool {
     children.len() == 2 && is_name(&children[0]) && is_type_reference(&children[1])
 }
 
-fn verb_name(call: &SyntaxNode) -> Option<String> {
+fn callable_name(call: &SyntaxNode) -> Option<String> {
     let callee = child_nodes(call).into_iter().next()?;
-    if callee.kind() != SyntaxKind::NAME {
+    if !is_name_or_dot_access(&callee) {
         return None;
     }
-    let name = callee.text().to_string();
-    let stem = name.strip_suffix('!').unwrap_or(&name);
-    let first = stem.chars().next()?;
-    (!first.is_uppercase()).then_some(name)
+    terminal_segment(&callee)
 }
 
 fn is_mutating_call(call: &SyntaxNode) -> bool {
-    verb_name(call).is_some_and(|name| name.ends_with('!'))
+    callable_name(call).is_some_and(|name| name.ends_with('!'))
 }
 
 fn validate_call(findings: &mut Vec<Finding>, call: &SyntaxNode, typed_allowed: bool) {
-    if verb_name(call).is_none() {
-        reject(findings, call, "call must use an unqualified verb name");
+    if callable_name(call).is_none() {
+        reject(findings, call, "call must use a name or dotted callable");
         return;
     }
 
@@ -123,7 +143,7 @@ fn validate_call(findings: &mut Vec<Finding>, call: &SyntaxNode, typed_allowed: 
     }
 
     let all_typed = expressions.iter().all(is_typed_noun);
-    let all_values = expressions.iter().all(is_name);
+    let all_values = expressions.iter().all(is_name_or_dot_access);
     if all_typed && !typed_allowed {
         reject(
             findings,
@@ -182,7 +202,7 @@ fn is_boolean(node: &SyntaxNode) -> bool {
 }
 
 fn validate_control_value(findings: &mut Vec<Finding>, value: &SyntaxNode, role: &str) {
-    if is_name(value) || is_boolean(value) {
+    if is_name_or_dot_access(value) || is_boolean(value) {
         return;
     }
     if value.kind() == SyntaxKind::CALL_EXPR {
@@ -192,7 +212,7 @@ fn validate_control_value(findings: &mut Vec<Finding>, value: &SyntaxNode, role:
     reject(
         findings,
         value,
-        format!("{role} must be a noun-value name, Bool, or verb call"),
+        format!("{role} must be a noun value, Bool, or verb call"),
     );
 }
 
@@ -282,9 +302,11 @@ fn validate_subtype(findings: &mut Vec<Finding>, expression: &SyntaxNode) {
 
 fn validate_statement(findings: &mut Vec<Finding>, statement: &SyntaxNode) {
     match statement.kind() {
+        SyntaxKind::BINARY_EXPR if is_name_or_dot_access(statement) => {}
         SyntaxKind::BINARY_EXPR => validate_subtype(findings, statement),
         SyntaxKind::CALL_EXPR => validate_call(findings, statement, true),
         SyntaxKind::ASSIGNMENT_EXPR => validate_assignment(findings, statement),
+        SyntaxKind::FUNCTION_DEF => {}
         SyntaxKind::IF_EXPR => validate_if(findings, statement),
         SyntaxKind::FOR_EXPR => validate_for(findings, statement),
         SyntaxKind::WHILE_EXPR => validate_while(findings, statement),
@@ -510,13 +532,43 @@ end
     }
 
     #[test]
+    fn accepts_dot_access_and_algorithm_body() {
+        let source = r#"
+const CORE = quote
+    Rible.Structure(nodes)
+    Rible.AbstractStructure
+    Rible.execute!(structure, state)
+    beam2_variation!(destination, workspace.frame_variation, body.cache.d)
+    structure::Rible.AbstractStructure = Rible.build(nodes::Rible.Nodes)
+
+    if state.ready
+        Rible.execute!(structure.state, body.cache.d)
+    end
+end
+
+const ALGORITHM = quote
+    function projector!(destination, workspace, body::CorotationalBody{Beam2Family})
+        beam2_variation!(
+            destination,
+            workspace.frame_variation,
+            workspace.frame,
+            body.cache.d,
+        )
+    end
+end
+"#;
+
+        assert_eq!(messages(source), Vec::<String>::new());
+    }
+
+    #[test]
     fn rejects_expressions_outside_the_subset() {
         let cases = [
             ("value = a + b", "assignment value must be a verb call"),
             ("value = verb(other(a), b)", "arguments must be either"),
-            ("verb(a.field)", "arguments must be either"),
+            ("verb(a[1])", "arguments must be either"),
             (
-                "function verb(a)\n a\n end",
+                "struct Container\n value\n end",
                 "outside the idiomatic Julia note subset",
             ),
             ("@show a", "outside the idiomatic Julia note subset"),
@@ -534,12 +586,15 @@ end
 
     #[test]
     fn mutating_calls_cannot_be_assigned() {
-        let source = "const DESIGN = quote\nresult = update!(state)\nend\n";
-        assert!(
-            messages(source)
-                .iter()
-                .any(|message| message.contains("call a mutating `verb!` directly"))
-        );
+        for call in ["update!(state)", "Rible.update!(state)"] {
+            let source = format!("const DESIGN = quote\nresult = {call}\nend\n");
+            assert!(
+                messages(&source)
+                    .iter()
+                    .any(|message| message.contains("call a mutating `verb!` directly")),
+                "expected assigned mutating call to fail: {call}"
+            );
+        }
     }
 
     #[test]
