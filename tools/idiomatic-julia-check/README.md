@@ -50,21 +50,21 @@ Every non-comment top-level item must be either `quote ... end` or `const NAME =
 Dot access is accepted for noun values, callables, and type references. Module qualification is one use of the same syntax:
 
 ```julia
-Rible.AbstractStructure
-Rible.Structure(nodes)
-Rible.execute!(structure.state, body.cache.d)
-structure::Rible.AbstractStructure = Rible.build(nodes::Rible.Nodes)
+PackageName.AbstractNoun
+PackageName.ConcreteNoun(items)
+PackageName.verb!(object.state, context.cache.value)
+result::PackageName.ResultNoun = PackageName.verb(input::PackageName.InputNoun)
 ```
 
 Long-form function definitions are accepted as algorithm blocks:
 
 ```julia
-function projector!(destination, workspace, body::CorotationalBody{Beam2Family})
-    beam2_variation!(
+function transform!(destination, workspace, item::ConcreteNoun{Variant})
+    combine!(
         destination,
-        workspace.frame_variation,
-        workspace.frame,
-        body.cache.d,
+        workspace.intermediate,
+        workspace.parameters,
+        item.data,
     )
 end
 ```

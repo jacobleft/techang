@@ -535,24 +535,24 @@ end
     fn accepts_dot_access_and_algorithm_body() {
         let source = r#"
 const CORE = quote
-    Rible.Structure(nodes)
-    Rible.AbstractStructure
-    Rible.execute!(structure, state)
-    beam2_variation!(destination, workspace.frame_variation, body.cache.d)
-    structure::Rible.AbstractStructure = Rible.build(nodes::Rible.Nodes)
+    PackageName.ConcreteNoun(items)
+    PackageName.AbstractNoun
+    PackageName.verb!(object, state)
+    combine!(destination, workspace.intermediate, item.data)
+    result::PackageName.ResultNoun = PackageName.verb(input::PackageName.InputNoun)
 
     if state.ready
-        Rible.execute!(structure.state, body.cache.d)
+        PackageName.verb!(object.state, context.cache.value)
     end
 end
 
 const ALGORITHM = quote
-    function projector!(destination, workspace, body::CorotationalBody{Beam2Family})
-        beam2_variation!(
+    function transform!(destination, workspace, item::ConcreteNoun{Variant})
+        combine!(
             destination,
-            workspace.frame_variation,
-            workspace.frame,
-            body.cache.d,
+            workspace.intermediate,
+            workspace.parameters,
+            item.data,
         )
     end
 end
@@ -586,7 +586,7 @@ end
 
     #[test]
     fn mutating_calls_cannot_be_assigned() {
-        for call in ["update!(state)", "Rible.update!(state)"] {
+        for call in ["update!(state)", "PackageName.update!(state)"] {
             let source = format!("const DESIGN = quote\nresult = {call}\nend\n");
             assert!(
                 messages(&source)
