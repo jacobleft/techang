@@ -306,28 +306,25 @@ fn validate_statement(findings: &mut Vec<Finding>, statement: &SyntaxNode) {
     }
 }
 
-fn validate_wrapper(findings: &mut Vec<Finding>, root: &SyntaxNode) {
-    let items = child_nodes(root);
-    if items.len() != 1 || items[0].kind() != SyntaxKind::CONST_STMT {
-        reject(
-            findings,
-            root,
-            "file must contain only `const DESIGN = quote ... end`",
-        );
+fn validate_quote(findings: &mut Vec<Finding>, quote: &SyntaxNode) {
+    let blocks: Vec<_> = quote
+        .children()
+        .filter(|child| child.kind() == SyntaxKind::BLOCK)
+        .collect();
+    if blocks.len() != 1 {
+        reject(findings, quote, "quote must contain one body");
         return;
     }
+    validate_block(findings, &blocks[0]);
+}
 
-    let declaration = &items[0];
+fn validate_const_quote(findings: &mut Vec<Finding>, declaration: &SyntaxNode) {
     let assignments: Vec<_> = declaration
         .children()
         .filter(|child| child.kind() == SyntaxKind::ASSIGNMENT_EXPR)
         .collect();
     if assignments.len() != 1 {
-        reject(
-            findings,
-            declaration,
-            "DESIGN must have one quoted assignment",
-        );
+        reject(findings, declaration, "const label must assign one quote");
         return;
     }
 
@@ -335,27 +332,36 @@ fn validate_wrapper(findings: &mut Vec<Finding>, root: &SyntaxNode) {
     let children = child_nodes(assignment);
     if children.len() != 2
         || children[0].kind() != SyntaxKind::NAME
-        || children[0].text() != "DESIGN"
         || children[1].kind() != SyntaxKind::QUOTE_EXPR
     {
         reject(
             findings,
             assignment,
-            "wrapper must be exactly `const DESIGN = quote ... end`",
+            "top-level const must be `const NAME = quote ... end`",
         );
         return;
     }
+    validate_quote(findings, &children[1]);
+}
 
-    let quote = &children[1];
-    let blocks: Vec<_> = quote
-        .children()
-        .filter(|child| child.kind() == SyntaxKind::BLOCK)
-        .collect();
-    if blocks.len() != 1 {
-        reject(findings, quote, "DESIGN quote must contain one body");
+fn validate_file(findings: &mut Vec<Finding>, root: &SyntaxNode) {
+    let items = child_nodes(root);
+    if items.is_empty() {
+        reject(findings, root, "file must contain at least one quote");
         return;
     }
-    validate_block(findings, &blocks[0]);
+
+    for item in items {
+        match item.kind() {
+            SyntaxKind::QUOTE_EXPR => validate_quote(findings, &item),
+            SyntaxKind::CONST_STMT => validate_const_quote(findings, &item),
+            _ => reject(
+                findings,
+                &item,
+                "top-level item must be `quote ... end` or `const NAME = quote ... end`",
+            ),
+        }
+    }
 }
 
 fn line_column(source: &str, offset: usize) -> (usize, usize) {
@@ -381,7 +387,7 @@ fn validate_source(source: &str) -> Vec<Finding> {
         });
     }
     if findings.is_empty() {
-        validate_wrapper(&mut findings, &parsed.cst);
+        validate_file(&mut findings, &parsed.cst);
     }
 
     findings
@@ -478,6 +484,32 @@ end
     }
 
     #[test]
+    fn accepts_multiple_quotes_and_comments() {
+        let source = r#"
+# Noun relationships
+const NOUNS = quote
+    CsvInput <: Input # line comment inside a quote
+end
+
+#=
+Operation declarations can have their own quoted block.
+=#
+const OPERATIONS = quote
+    output::Output = transform(input::Input, options::Options)
+    write!(buffer::Buffer, output::Output)
+end
+
+# Bare quotes are also valid.
+quote
+    output = transform(input, options)
+    write!(buffer, output)
+end
+"#;
+
+        assert_eq!(messages(source), Vec::<String>::new());
+    }
+
+    #[test]
     fn rejects_expressions_outside_the_subset() {
         let cases = [
             ("value = a + b", "assignment value must be a verb call"),
@@ -511,12 +543,22 @@ end
     }
 
     #[test]
-    fn requires_the_design_quote_wrapper() {
+    fn requires_quoted_top_level_items() {
         let source = "result = observe(robot, state)\n";
         assert!(
             messages(source)
                 .iter()
-                .any(|message| message.contains("const DESIGN = quote"))
+                .any(|message| message.contains("top-level item must be"))
+        );
+    }
+
+    #[test]
+    fn comments_alone_are_not_a_design() {
+        let source = "# no quoted design yet\n#= still no design =#\n";
+        assert!(
+            messages(source)
+                .iter()
+                .any(|message| message.contains("at least one quote"))
         );
     }
 }

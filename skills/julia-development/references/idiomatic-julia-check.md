@@ -16,15 +16,22 @@ Every Julia package uses one canonical path for concept-only quoted Julia. Here,
 <package-root>/docs/design/IdiomaticJulia.jl
 ```
 
-Do not place these concept notes under `src/`, `test/`, the package root, or another documentation directory. The file contains one quoted expression:
+Do not place these concept notes under `src/`, `test/`, the package root, or another documentation directory. The file contains one or more quoted blocks. Comments may appear between or inside them:
 
 ```julia
-const DESIGN = quote
+# Noun relationships
+const NOUNS = quote
     SpecificNoun <: GeneralNoun
+end
 
+# Verb declarations
+const VERBS = quote
     result::ResultNoun = verb(a::NounA, b::NounB)
     mutate!(a::NounA, b::NounB)
+end
 
+# Representative composition
+quote
     result = verb(a, b)
     mutate!(a, b)
 
@@ -40,7 +47,7 @@ const DESIGN = quote
 end
 ```
 
-The quote keeps the note valid Julia syntax without resolving types or executing calls. Fatou can format and lint the `.jl` file.
+Each top-level item must be either `quote ... end` or `const NAME = quote ... end`; a file may mix both forms. Line comments and `#= ... =#` block comments are allowed anywhere. The quotes keep the note valid Julia syntax without resolving types or executing calls. Fatou can format and lint the `.jl` file.
 
 The checker permits:
 
