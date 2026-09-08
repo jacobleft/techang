@@ -1,6 +1,9 @@
+mod api;
+
 use std::env;
+use std::ffi::OsString;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use fatou_parser::parser::parse;
@@ -543,13 +546,33 @@ fn validate_source(source: &str) -> Vec<Finding> {
     findings
 }
 
-fn check_file(path: &Path) -> Result<bool, String> {
+fn check_file(path: &Path, api_root: Option<&Path>) -> Result<bool, String> {
     let source = fs::read_to_string(path).map_err(|error| error.to_string())?;
     let findings = validate_source(&source);
 
     if findings.is_empty() {
         println!("{}: valid", path.display());
-        return Ok(true);
+        let Some(api_root) = api_root else {
+            return Ok(true);
+        };
+        let api_findings = api::check_api(api_root, &source)?;
+        if api_findings.is_empty() {
+            println!("{}: api: no typed signatures", path.display());
+            return Ok(true);
+        }
+        let mut compatible = true;
+        for finding in api_findings {
+            let (line, column) = line_column(&source, finding.offset);
+            println!(
+                "{}:{line}:{column}: api {}: {} — {}",
+                path.display(),
+                finding.status.label(),
+                finding.signature,
+                finding.detail
+            );
+            compatible &= finding.status.is_compatible();
+        }
+        return Ok(compatible);
     }
 
     for finding in findings {
@@ -559,17 +582,40 @@ fn check_file(path: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
+fn parse_args() -> Result<(Option<PathBuf>, Vec<OsString>), String> {
+    let mut arguments = env::args_os().skip(1);
+    let mut api_root = None;
+    let mut paths = Vec::new();
+    while let Some(argument) = arguments.next() {
+        if argument == "--api-report" {
+            let Some(root) = arguments.next() else {
+                return Err("`--api-report` requires a package root".to_string());
+            };
+            api_root = Some(PathBuf::from(root));
+        } else {
+            paths.push(argument);
+        }
+    }
+    Ok((api_root, paths))
+}
+
 fn main() -> ExitCode {
-    let paths: Vec<_> = env::args_os().skip(1).collect();
+    let (api_root, paths) = match parse_args() {
+        Ok(arguments) => arguments,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(2);
+        }
+    };
     if paths.is_empty() {
-        eprintln!("usage: idiomatic-julia-check <file>...");
+        eprintln!("usage: idiomatic-julia-check [--api-report <package-root>] <file>...");
         return ExitCode::from(2);
     }
 
     let mut valid = true;
     for path in paths {
         let path = Path::new(&path);
-        match check_file(path) {
+        match check_file(path, api_root.as_deref()) {
             Ok(result) => valid &= result,
             Err(error) => {
                 eprintln!("{}: {error}", path.display());

@@ -1,0 +1,9 @@
+# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.12.7"
+manifest_format = "2.0"
+
+[[deps.Dependency]]
+path = "dependency"
+uuid = "cccccccc-4444-5555-6666-dddddddddddd"
+version = "2.0.0"

@@ -1,0 +1,6 @@
+name = "ApiFixture"
+uuid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
+version = "1.0.0"
+
+[deps]
+Dependency = "cccccccc-4444-5555-6666-dddddddddddd"

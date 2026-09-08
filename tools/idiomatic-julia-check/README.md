@@ -1,6 +1,6 @@
 # idiomatic-julia-check
 
-`idiomatic-julia-check` validates a deliberately small Julia-shaped design notation. It is a compiled Rust executable backed by Fatou's parser. It parses the file but never evaluates it.
+`idiomatic-julia-check` validates a deliberately small Julia-shaped design notation and can statically compare its typed function signatures with package source. It is a compiled Rust executable backed by Fatou's parser. It parses source but never evaluates it or starts Julia.
 
 The tool requires and pins Rust 1.98.1.
 
@@ -20,6 +20,12 @@ From a Julia package root, check its concept-only quoted Julia file:
 
 ```sh
 idiomatic-julia-check docs/design/IdiomaticJulia.jl
+```
+
+After implementing the design, report static API compatibility:
+
+```sh
+idiomatic-julia-check --api-report . docs/design/IdiomaticJulia.jl
 ```
 
 The standardized path is `<package-root>/docs/design/IdiomaticJulia.jl`, where `<package-root>` is a placeholder for the package's actual root directory.
@@ -90,4 +96,21 @@ Supported control flow is `if`/`elseif`/`else`, `for`, `while`, `break`, and `co
 
 Outside function definitions, arbitrary expressions, nested calls, index arguments, macros, type definitions, unsupported assignment operators, and binding a result from `verb!` with plain `=` are rejected.
 
-Exit status is `0` when every input is valid, `1` for an invalid or unreadable input, and `2` when no path is supplied. Diagnostics use `path:line:column: message`.
+## Static API report
+
+The API report extracts typed call declarations and long-form function signatures from the design note, then indexes method definitions in the package's `src/**/*.jl` files. It compares callable ownership, positional arity and types, varargs, keyword names, keyword types and default presence, explicit return annotations, and subtype coverage.
+
+The report uses four results:
+
+- `exact`: the source declares the same signature.
+- `covered`: a broader declared method accepts the required typed arguments.
+- `missing`: no compatible declared method exists, or the qualified module is not the package or a direct dependency.
+- `unknown`: macros, `where` constraints, generated constructors, unresolved types, missing return annotations, or unavailable pinned source prevent a static conclusion.
+
+`exact` and `covered` succeed. `missing` and `unknown` make the command exit with status `1` so an unproven signature cannot pass as compatible.
+
+Dependency lookup is environment-bound. A qualified dependency must be listed in the package's `[deps]` and have a matching entry in `Manifest.toml`. Path dependencies use the recorded path. Registry and Git dependencies use the Manifest UUID and `git-tree-sha1` to locate Julia's exact version-slug directory under `JULIA_DEPOT_PATH`; the checker does not substitute another installed version. Only dependencies referenced by the design note are indexed.
+
+This is a static source report. It does not claim compatibility for methods created by macros, `eval`, package extensions, or other runtime generation.
+
+Exit status is `0` when every input is valid and every requested API signature is confirmed, `1` for invalid, unreadable, missing, or unknown results, and `2` for invalid command usage. Diagnostics use `path:line:column: message`.

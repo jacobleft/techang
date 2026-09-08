@@ -119,6 +119,17 @@ fatou lint docs/design/IdiomaticJulia.jl
 
 The checker uses Fatou's parser and does not start Julia or maintain a second Julia grammar.
 
+After implementing the designed surface, compare its typed function signatures with the package and its Manifest-bound direct dependencies:
+
+```sh
+# Run from the actual package root.
+idiomatic-julia-check --api-report . docs/design/IdiomaticJulia.jl
+```
+
+The report compares positional arity and types, varargs, keyword names, keyword types and default presence, explicit return annotations, and statically declared subtype coverage. Its results are `exact`, `covered`, `missing`, and `unknown`. Only `exact` and `covered` confirm compatibility; `missing` and `unknown` produce exit status `1`.
+
+Qualified dependency signatures are checked only when the dependency is direct in `Project.toml` and pinned in `Manifest.toml`. Path dependencies resolve from their recorded path. Registry and Git dependencies resolve through the Manifest UUID and `git-tree-sha1`, which identify the exact Julia depot version-slug directory. The checker never substitutes a different installed version. Macro-generated methods, `eval`, package extensions, complex `where` constraints, generated constructors, and unavailable source are reported as `unknown`.
+
 ## Scope
 
-During package design, create or update `docs/design/IdiomaticJulia.jl` relative to the actual package root when a change introduces or renames important verbs or noun types, or changes how they compose. Run `idiomatic-julia-check` before implementing that design. Do not enumerate every function, method, field, or helper. After validation, inspect the corresponding generics, types, dependencies, `public` declarations, exports, and concrete restrictions in the implementation.
+During package design, create or update `docs/design/IdiomaticJulia.jl` relative to the actual package root when a change introduces or renames important verbs or noun types, or changes how they compose. Run the notation check before implementing that design, and run the static API report after implementation. Do not enumerate every function, method, field, or helper. After validation, inspect the corresponding generics, types, dependencies, `public` declarations, exports, and concrete restrictions in the implementation.
