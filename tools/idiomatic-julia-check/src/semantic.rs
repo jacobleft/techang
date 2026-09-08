@@ -7,6 +7,7 @@ use fatou_parser::syntax::{SyntaxKind, SyntaxNode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApiStatus {
+    Planned,
     Exact,
     Covered,
     Missing,
@@ -16,6 +17,7 @@ pub enum ApiStatus {
 impl ApiStatus {
     pub fn label(self) -> &'static str {
         match self {
+            Self::Planned => "planned",
             Self::Exact => "exact",
             Self::Covered => "covered",
             Self::Missing => "missing",
@@ -24,7 +26,7 @@ impl ApiStatus {
     }
 
     pub fn is_compatible(self) -> bool {
-        matches!(self, Self::Exact | Self::Covered)
+        matches!(self, Self::Planned | Self::Exact | Self::Covered)
     }
 }
 
@@ -58,11 +60,19 @@ struct KeywordSpec {
     has_default: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SignatureOrigin {
+    Declaration,
+    Requirement,
+    Implementation,
+}
+
 #[derive(Clone, Debug)]
 struct MethodSignature {
     callable: String,
     qualifier: Option<String>,
     owner: Option<String>,
+    origin: SignatureOrigin,
     positional: Vec<TypeSpec>,
     keywords: Vec<KeywordSpec>,
     return_type: Option<TypeSpec>,
@@ -116,6 +126,7 @@ struct ApiIndex {
     methods: Vec<MethodSignature>,
     parents: HashMap<String, String>,
     types: HashSet<String>,
+    bindings: HashSet<(String, String)>,
     dependencies: HashSet<String>,
     unresolved_modules: HashMap<String, String>,
 }
@@ -340,6 +351,7 @@ fn method_signature(node: &SyntaxNode) -> Option<MethodSignature> {
         callable,
         qualifier,
         owner: None,
+        origin: SignatureOrigin::Declaration,
         positional,
         keywords,
         return_type,
@@ -354,6 +366,34 @@ fn return_type_from_binding(node: &SyntaxNode) -> Option<TypeSpec> {
     (node.kind() == SyntaxKind::TYPE_ANNOTATION && parts.len() == 2).then(|| type_spec(&parts[1]))
 }
 
+fn signature_has_types(signature: &MethodSignature) -> bool {
+    signature.return_type.is_some()
+        || signature
+            .positional
+            .iter()
+            .any(|argument| argument.text != "Any")
+        || signature
+            .keywords
+            .iter()
+            .any(|keyword| keyword.value_type.text != "Any")
+}
+
+fn same_node(left: &SyntaxNode, right: &SyntaxNode) -> bool {
+    left.kind() == right.kind() && left.text_range() == right.text_range()
+}
+
+fn inside_function(node: &SyntaxNode) -> bool {
+    node.ancestors()
+        .skip(1)
+        .any(|ancestor| ancestor.kind() == SyntaxKind::FUNCTION_DEF)
+}
+
+fn has_ancestor(node: &SyntaxNode, kind: SyntaxKind) -> bool {
+    node.ancestors()
+        .skip(1)
+        .any(|ancestor| ancestor.kind() == kind)
+}
+
 fn design_signatures(root: &SyntaxNode) -> Vec<MethodSignature> {
     let mut signatures = Vec::new();
     for quote in root
@@ -366,19 +406,55 @@ fn design_signatures(root: &SyntaxNode) -> Vec<MethodSignature> {
         else {
             continue;
         };
-        for statement in block.children() {
-            let signature = match statement.kind() {
-                SyntaxKind::FUNCTION_DEF => statement
+        for node in block.descendants().skip(1) {
+            if inside_function(&node) {
+                continue;
+            }
+            let top_level = node
+                .parent()
+                .is_some_and(|parent| same_node(&parent, &block));
+            let signature = match node.kind() {
+                SyntaxKind::FUNCTION_DEF => node
                     .children()
                     .find(|child| child.kind() == SyntaxKind::SIGNATURE)
-                    .and_then(|signature| method_signature(&signature)),
-                SyntaxKind::CALL_EXPR | SyntaxKind::TYPE_ANNOTATION => method_signature(&statement),
-                SyntaxKind::ASSIGNMENT_EXPR if has_token(&statement, SyntaxKind::EQ) => {
-                    let parts = children(&statement);
+                    .and_then(|signature| method_signature(&signature))
+                    .map(|mut signature| {
+                        signature.origin = SignatureOrigin::Declaration;
+                        signature
+                    }),
+                SyntaxKind::TYPE_ANNOTATION
+                    if !has_ancestor(&node, SyntaxKind::ASSIGNMENT_EXPR) =>
+                {
+                    method_signature(&node).map(|mut signature| {
+                        signature.origin = if top_level && signature_has_types(&signature) {
+                            SignatureOrigin::Declaration
+                        } else {
+                            SignatureOrigin::Requirement
+                        };
+                        signature
+                    })
+                }
+                SyntaxKind::CALL_EXPR
+                    if !has_ancestor(&node, SyntaxKind::ASSIGNMENT_EXPR)
+                        && !has_ancestor(&node, SyntaxKind::TYPE_ANNOTATION)
+                        && !has_ancestor(&node, SyntaxKind::CALL_EXPR) =>
+                {
+                    method_signature(&node).map(|mut signature| {
+                        signature.origin = if top_level && signature_has_types(&signature) {
+                            SignatureOrigin::Declaration
+                        } else {
+                            SignatureOrigin::Requirement
+                        };
+                        signature
+                    })
+                }
+                SyntaxKind::ASSIGNMENT_EXPR if has_token(&node, SyntaxKind::EQ) => {
+                    let parts = children(&node);
                     if parts.len() != 2 {
                         None
                     } else {
                         method_signature(&parts[1]).map(|mut signature| {
+                            signature.origin = SignatureOrigin::Requirement;
                             if signature.return_type.is_none() {
                                 signature.return_type = return_type_from_binding(&parts[0]);
                             }
@@ -388,22 +464,12 @@ fn design_signatures(root: &SyntaxNode) -> Vec<MethodSignature> {
                 }
                 _ => None,
             };
-            if let Some(signature) = signature
-                && (signature.return_type.is_some()
-                    || signature
-                        .positional
-                        .iter()
-                        .any(|argument| argument.text != "Any")
-                    || signature
-                        .keywords
-                        .iter()
-                        .any(|keyword| keyword.value_type.text != "Any")
-                    || statement.kind() == SyntaxKind::FUNCTION_DEF)
-            {
+            if let Some(signature) = signature {
                 signatures.push(signature);
             }
         }
     }
+    signatures.sort_by_key(|signature| signature.offset);
     signatures
 }
 
@@ -430,7 +496,7 @@ fn declaration_name(node: &SyntaxNode) -> Option<String> {
     }
 }
 
-fn index_type(index: &mut ApiIndex, declaration: &SyntaxNode) {
+fn index_type(index: &mut ApiIndex, declaration: &SyntaxNode, owner: &str) {
     let Some(signature) = declaration
         .children()
         .find(|child| child.kind() == SyntaxKind::SIGNATURE)
@@ -453,8 +519,28 @@ fn index_type(index: &mut ApiIndex, declaration: &SyntaxNode) {
         if let Some(parent) = parent {
             index.parents.insert(name.clone(), parent);
         }
+        index.bindings.insert((owner.to_string(), name.clone()));
         index.types.insert(name);
     }
+}
+
+fn signature_owner(signature: &MethodSignature, default_owner: &str) -> String {
+    signature
+        .qualifier
+        .as_deref()
+        .and_then(|qualifier| qualifier.split('.').next())
+        .unwrap_or(default_owner)
+        .to_string()
+}
+
+fn index_method(index: &mut ApiIndex, mut signature: MethodSignature, owner: &str) {
+    signature.origin = SignatureOrigin::Implementation;
+    signature.owner = Some(signature_owner(&signature, owner));
+    index.bindings.insert((
+        signature.owner.clone().unwrap_or_else(|| owner.to_string()),
+        signature.callable.clone(),
+    ));
+    index.methods.push(signature);
 }
 
 fn index_source_files(
@@ -474,21 +560,18 @@ fn index_source_files(
         for node in parsed.cst.descendants() {
             match node.kind() {
                 SyntaxKind::FUNCTION_DEF if !is_nested_method(&node) => {
-                    if let Some(mut signature) = node
+                    let signature_node = node
                         .children()
-                        .find(|child| child.kind() == SyntaxKind::SIGNATURE)
-                        .and_then(|signature| method_signature(&signature))
+                        .find(|child| child.kind() == SyntaxKind::SIGNATURE);
+                    if let Some(mut signature) = signature_node.as_ref().and_then(method_signature)
                     {
                         signature.uncertain |= definition_is_dynamic(&node);
-                        signature.owner = Some(
-                            signature
-                                .qualifier
-                                .as_deref()
-                                .and_then(|qualifier| qualifier.split('.').next())
-                                .unwrap_or(owner)
-                                .to_string(),
-                        );
-                        index.methods.push(signature);
+                        index_method(index, signature, owner);
+                    } else if let Some(name) = signature_node
+                        .and_then(|signature| children(&signature).first().cloned())
+                        .and_then(|expression| declaration_name(&expression))
+                    {
+                        index.bindings.insert((owner.to_string(), name));
                     }
                 }
                 SyntaxKind::ASSIGNMENT_EXPR
@@ -498,19 +581,11 @@ fn index_source_files(
                         && let Some(mut signature) = method_signature(left)
                     {
                         signature.uncertain |= definition_is_dynamic(&node);
-                        signature.owner = Some(
-                            signature
-                                .qualifier
-                                .as_deref()
-                                .and_then(|qualifier| qualifier.split('.').next())
-                                .unwrap_or(owner)
-                                .to_string(),
-                        );
-                        index.methods.push(signature);
+                        index_method(index, signature, owner);
                     }
                 }
                 SyntaxKind::STRUCT_DEF | SyntaxKind::ABSTRACT_DEF => {
-                    index_type(index, &node);
+                    index_type(index, &node, owner);
                 }
                 _ => {}
             }
@@ -519,6 +594,7 @@ fn index_source_files(
     Ok(())
 }
 
+#[cfg(test)]
 fn source_index(source_files: &[(PathBuf, String)], owner: &str) -> Result<ApiIndex, String> {
     let mut index = ApiIndex::default();
     index_source_files(&mut index, source_files, owner)?;
@@ -669,6 +745,34 @@ fn compare_signature(
                 && target_owner.is_none_or(|owner| method.owner.as_deref() == Some(owner))
         })
         .collect();
+    let value_only = required.return_type.is_none()
+        && required
+            .positional
+            .iter()
+            .all(|argument| argument.text == "Any")
+        && required
+            .keywords
+            .iter()
+            .all(|keyword| keyword.value_type.text == "Any");
+    if value_only
+        && candidates.iter().any(|candidate| {
+            candidate.positional.len() == required.positional.len()
+                && required.keywords.iter().all(|required_keyword| {
+                    candidate
+                        .keywords
+                        .iter()
+                        .any(|keyword| keyword.name == required_keyword.name)
+                })
+        })
+    {
+        return ApiFinding {
+            offset: required.offset,
+            status: ApiStatus::Covered,
+            signature: display,
+            detail: "planned callable and argument shape found; value types are unspecified"
+                .to_string(),
+        };
+    }
     if candidates
         .iter()
         .any(|candidate| signatures_equal(required, candidate))
@@ -713,6 +817,100 @@ fn compare_signature(
         } else {
             "no declared method covers this signature".to_string()
         },
+    }
+}
+
+fn declaration_finding(
+    declaration: &MethodSignature,
+    index: &ApiIndex,
+    package_name: &str,
+) -> ApiFinding {
+    let display = declaration.display();
+    let owner = signature_owner(declaration, package_name);
+    if declaration
+        .qualifier
+        .as_deref()
+        .is_some_and(|qualifier| qualifier.contains('.'))
+    {
+        return ApiFinding {
+            offset: declaration.offset,
+            status: ApiStatus::Unknown,
+            signature: display,
+            detail: "nested module ownership cannot be resolved statically".to_string(),
+        };
+    }
+    if owner == package_name {
+        return ApiFinding {
+            offset: declaration.offset,
+            status: ApiStatus::Planned,
+            signature: display,
+            detail: "declares a package-owned design signature".to_string(),
+        };
+    }
+    if !index.dependencies.contains(&owner) {
+        return ApiFinding {
+            offset: declaration.offset,
+            status: ApiStatus::Missing,
+            signature: display,
+            detail: format!("{owner} is not a direct Manifest-bound dependency"),
+        };
+    }
+    if let Some(reason) = index.unresolved_modules.get(&owner) {
+        return ApiFinding {
+            offset: declaration.offset,
+            status: ApiStatus::Unknown,
+            signature: display,
+            detail: reason.clone(),
+        };
+    }
+    if !index
+        .bindings
+        .contains(&(owner.clone(), declaration.callable.clone()))
+    {
+        return ApiFinding {
+            offset: declaration.offset,
+            status: ApiStatus::Missing,
+            signature: display,
+            detail: format!(
+                "{} has no callable or type binding named {}",
+                owner, declaration.callable
+            ),
+        };
+    }
+    ApiFinding {
+        offset: declaration.offset,
+        status: ApiStatus::Planned,
+        signature: display,
+        detail: format!("declares a planned method for the {owner} binding"),
+    }
+}
+
+fn index_design_hierarchy(index: &mut ApiIndex, root: &SyntaxNode, package_name: &str) {
+    for quote in root
+        .descendants()
+        .filter(|node| node.kind() == SyntaxKind::QUOTE_EXPR)
+    {
+        let Some(block) = quote
+            .children()
+            .find(|child| child.kind() == SyntaxKind::BLOCK)
+        else {
+            continue;
+        };
+        for statement in block.children().filter(|statement| {
+            statement.kind() == SyntaxKind::BINARY_EXPR && has_token(statement, SyntaxKind::SUBTYPE)
+        }) {
+            let parts = children(&statement);
+            if parts.len() != 2 {
+                continue;
+            }
+            let Some(child) = declaration_name(&parts[0]) else {
+                continue;
+            };
+            let parent = type_spec(&parts[1]).text;
+            index.parents.insert(child.clone(), parent);
+            index.types.insert(child.clone());
+            index.bindings.insert((package_name.to_string(), child));
+        }
     }
 }
 
@@ -1014,7 +1212,10 @@ fn read_source_files(package_root: &Path) -> Result<Vec<(PathBuf, String)>, Stri
         .collect()
 }
 
-pub fn check_api(package_root: &Path, design_source: &str) -> Result<Vec<ApiFinding>, String> {
+pub fn check_semantics(
+    package_root: &Path,
+    design_source: &str,
+) -> Result<Vec<ApiFinding>, String> {
     let package_name = project_name(package_root)
         .ok_or_else(|| "Project.toml must declare the package name".to_string())?;
     let direct_dependencies = project_dependencies(package_root)?;
@@ -1023,13 +1224,29 @@ pub fn check_api(package_root: &Path, design_source: &str) -> Result<Vec<ApiFind
     } else {
         manifest_dependencies(package_root)?
     };
-    let mut index = source_index(&read_source_files(package_root)?, &package_name)?;
+    let design = parse(design_source);
+    if let Some(diagnostic) = design.diagnostics.first() {
+        return Err(format!("Julia parse error: {}", diagnostic.message));
+    }
+    let signatures = design_signatures(&design.cst);
+    let referenced_dependencies: HashSet<_> = signatures
+        .iter()
+        .filter_map(|signature| {
+            signature
+                .qualifier
+                .as_deref()
+                .and_then(|qualifier| qualifier.split('.').next())
+                .filter(|owner| *owner != package_name)
+                .map(str::to_string)
+        })
+        .collect();
+    let mut index = ApiIndex::default();
     index
         .dependencies
         .extend(direct_dependencies.keys().cloned());
     for (name, uuid) in direct_dependencies
         .iter()
-        .filter(|(name, _)| design_source.contains(&format!("{name}.")))
+        .filter(|(name, _)| referenced_dependencies.contains(*name))
     {
         index.dependencies.insert(name.clone());
         let records: Vec<_> = manifest
@@ -1069,16 +1286,37 @@ pub fn check_api(package_root: &Path, design_source: &str) -> Result<Vec<ApiFind
             }
         }
     }
-    let design = parse(design_source);
-    Ok(design_signatures(&design.cst)
+    index_design_hierarchy(&mut index, &design.cst, &package_name);
+
+    for declaration in signatures
         .iter()
-        .map(|signature| compare_signature(signature, &index, Some(&package_name)))
+        .filter(|signature| signature.origin == SignatureOrigin::Declaration)
+    {
+        let finding = declaration_finding(declaration, &index, &package_name);
+        if finding.status.is_compatible() {
+            index_method(&mut index, declaration.clone(), &package_name);
+        }
+    }
+
+    Ok(signatures
+        .iter()
+        .map(|signature| match signature.origin {
+            SignatureOrigin::Declaration => declaration_finding(signature, &index, &package_name),
+            SignatureOrigin::Requirement => {
+                compare_signature(signature, &index, Some(&package_name))
+            }
+            SignatureOrigin::Implementation => unreachable!(),
+        })
         .collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn semantic_fixture() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/semantic-package")
+    }
 
     fn compare(design: &str, source: &str) -> Vec<ApiStatus> {
         let source_files = vec![(PathBuf::from("src/PackageName.jl"), source.to_string())];
@@ -1224,5 +1462,89 @@ version = "1.0.0"
             .map(|signature| compare_signature(signature, &index, Some("PackageName")).status)
             .collect();
         assert_eq!(statuses, vec![ApiStatus::Exact, ApiStatus::Missing]);
+    }
+
+    #[test]
+    fn checks_a_design_without_package_source() {
+        let root = semantic_fixture();
+        assert!(!root.join("src").exists());
+        let design = fs::read_to_string(root.join("docs/design/IdiomaticJulia.jl")).unwrap();
+        let statuses: Vec<_> = check_semantics(&root, &design)
+            .unwrap()
+            .into_iter()
+            .map(|finding| finding.status)
+            .collect();
+        assert_eq!(statuses, vec![ApiStatus::Planned, ApiStatus::Exact]);
+    }
+
+    #[test]
+    fn checks_requirements_against_the_planned_dispatch_surface() {
+        let design = r#"
+quote
+    SpecificInput <: GeneralInput
+    transform(input::GeneralInput)::Result
+    result::Result = transform(input::SpecificInput)
+    transform(input)
+end
+"#;
+        let statuses: Vec<_> = check_semantics(&semantic_fixture(), design)
+            .unwrap()
+            .into_iter()
+            .map(|finding| finding.status)
+            .collect();
+        assert_eq!(
+            statuses,
+            vec![ApiStatus::Planned, ApiStatus::Covered, ApiStatus::Covered]
+        );
+    }
+
+    #[test]
+    fn checks_requirements_inside_control_flow() {
+        let design = r#"
+quote
+    available(input::Input)::Bool
+    records(input::Input)::Items
+    transform!(item::Item, options::Options)
+
+    if available(input)
+        for item in records(input)
+            transform!(item, options)
+        end
+    end
+end
+"#;
+        let statuses: Vec<_> = check_semantics(&semantic_fixture(), design)
+            .unwrap()
+            .into_iter()
+            .map(|finding| finding.status)
+            .collect();
+        assert_eq!(
+            statuses,
+            vec![
+                ApiStatus::Planned,
+                ApiStatus::Planned,
+                ApiStatus::Planned,
+                ApiStatus::Covered,
+                ApiStatus::Covered,
+                ApiStatus::Covered,
+            ]
+        );
+    }
+
+    #[test]
+    fn validates_dependency_extensions_and_requirements_differently() {
+        let design = r#"
+quote
+    Dependency.external(input::OtherInput)::ExternalResult
+    Dependency.fabricated(input::ExternalInput)::ExternalResult
+    result::ExternalResult = Dependency.external(input::OtherInput)
+end
+"#;
+        let findings = check_semantics(&semantic_fixture(), design).unwrap();
+        let statuses: Vec<_> = findings.iter().map(|finding| finding.status).collect();
+        assert_eq!(
+            statuses,
+            vec![ApiStatus::Planned, ApiStatus::Missing, ApiStatus::Exact]
+        );
     }
 }

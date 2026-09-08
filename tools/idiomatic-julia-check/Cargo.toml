@@ -1,9 +1,9 @@
 [package]
 name = "idiomatic-julia-check"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.98.1"
-description = "Validate Julia verb-and-noun design notes and statically compare API signatures"
+description = "Validate Julia verb-and-noun design notes and their semantic signatures"
 
 [dependencies]
 fatou-parser = "0.6.0"
