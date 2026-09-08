@@ -26,13 +26,13 @@ end
 
 # Verb declarations
 const VERBS = quote
-    result::ResultNoun = verb(a::NounA, b::NounB)
+    verb(a::NounA, b::NounB)::ResultNoun
     mutate!(a::NounA, b::NounB)
 end
 
 # Representative composition
 quote
-    result = verb(a, b)
+    result::ResultNoun = verb(a::NounA, b::NounB)
     mutate!(a, b)
 
     if condition(a)
@@ -108,28 +108,25 @@ Build and install the Rust executable from the `techang` repository:
 cargo +1.98.1 install --locked --path tools/idiomatic-julia-check
 ```
 
-Then check and format the note:
+Then check the note's notation and semantics, and format it:
 
 ```sh
 # Run from the actual package root.
-idiomatic-julia-check docs/design/IdiomaticJulia.jl
+idiomatic-julia-check --semantic . docs/design/IdiomaticJulia.jl
 fatou format docs/design/IdiomaticJulia.jl
 fatou lint docs/design/IdiomaticJulia.jl
 ```
 
 The checker uses Fatou's parser and does not start Julia or maintain a second Julia grammar.
 
-After implementing the designed surface, compare its typed function signatures with the package and its Manifest-bound direct dependencies:
+Run this gate during design, before implementation. Typed standalone calls and long-form signatures declare planned methods. Assignments whose right side is a call are signature requirements. Fully value-only calls require a planned callable with the same argument shape. Subtype lines provide the hierarchy used for coverage checks.
 
-```sh
-# Run from the actual package root.
-idiomatic-julia-check --api-report . docs/design/IdiomaticJulia.jl
-```
+Package-owned declarations build a virtual dispatch surface from the note itself. The package's `src` directory is never consulted. A qualified dependency declaration is a planned extension and must name an existing callable or type binding. A qualified dependency requirement must match or be covered by a statically declared method.
 
-The report compares positional arity and types, varargs, keyword names, keyword types and default presence, explicit return annotations, and statically declared subtype coverage. Its results are `exact`, `covered`, `missing`, and `unknown`. Only `exact` and `covered` confirm compatibility; `missing` and `unknown` produce exit status `1`.
+Dependency references are accepted only when the dependency is direct in `Project.toml` and pinned in `Manifest.toml`. Path dependencies resolve from their recorded path. Registry and Git dependencies resolve through the Manifest UUID and `git-tree-sha1`, which identify the exact Julia depot version-slug directory. The checker never substitutes a different installed version.
 
-Qualified dependency signatures are checked only when the dependency is direct in `Project.toml` and pinned in `Manifest.toml`. Path dependencies resolve from their recorded path. Registry and Git dependencies resolve through the Manifest UUID and `git-tree-sha1`, which identify the exact Julia depot version-slug directory. The checker never substitutes a different installed version. Macro-generated methods, `eval`, package extensions, complex `where` constraints, generated constructors, and unavailable source are reported as `unknown`.
+The gate reports `planned`, `exact`, `covered`, `missing`, or `unknown`. `planned`, `exact`, and `covered` pass. `missing` and `unknown` produce exit status `1`. Macro-generated methods, `eval`, package extensions, complex `where` constraints, generated constructors, and unavailable dependency source remain `unknown`. This is a semantic check of the design note and its dependency assumptions, not a post-implementation API conformance report.
 
 ## Scope
 
-During package design, create or update `docs/design/IdiomaticJulia.jl` relative to the actual package root when a change introduces or renames important verbs or noun types, or changes how they compose. Run the notation check before implementing that design, and run the static API report after implementation. Do not enumerate every function, method, field, or helper. After validation, inspect the corresponding generics, types, dependencies, `public` declarations, exports, and concrete restrictions in the implementation.
+During package design, create or update `docs/design/IdiomaticJulia.jl` relative to the actual package root when a change introduces or renames important verbs or noun types, or changes how they compose. Run the semantic gate before implementation. Do not enumerate every function, method, field, or helper. After validation, implement the corresponding generics, types, dependencies, `public` declarations, exports, and concrete restrictions.

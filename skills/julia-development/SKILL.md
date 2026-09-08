@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "write Julia code",
   Pkg, environment detection, repld-first execution, optional MCP server
   integration (Kaimon.jl and julia-mcp), and JETLS for static analysis.
   Not for non-Julia tasks. For package docs, load docs-style-preferences.
-version: 5.5.0
+version: 5.6.0
 tags: [Julia, MultipleDispatch, Types, Performance, Design, Environment, Pkg, repld, MCP, JETLS, QA]
 ---
 
@@ -106,7 +106,7 @@ When designing a package or changing its important verbs, noun types, or represe
 
 The note may use return type annotations, mixed typed and value arguments, keyword arguments, owned-field annotations such as `owner.field::FieldNoun`, tuple loop bindings, and dot access for noun values, callables, and type references. It may also contain long-form `function ... end` definitions for algorithms; their bodies are ordinary Julia rather than restricted verb–noun notation.
 
-From the actual package root, run `idiomatic-julia-check docs/design/IdiomaticJulia.jl` before implementation. After implementing the surface, run `idiomatic-julia-check --api-report . docs/design/IdiomaticJulia.jl` to compare its typed function signatures with the package source and referenced direct dependencies pinned by `Manifest.toml`. Treat `exact` and `covered` as confirmed; resolve every `missing` or `unknown` result rather than assuming compatibility. Then align the implementation with its generics, types, dependencies, `public` declarations, exports, and concrete restrictions. If the command is unavailable, read [the notation and checker reference](references/idiomatic-julia-check.md) for its install command.
+From the actual package root, run `idiomatic-julia-check --semantic . docs/design/IdiomaticJulia.jl` during design, before implementation. Typed standalone calls and long-form signatures declare the planned package surface. Assignments and value-only calls require a compatible planned signature; qualified dependency requirements are checked against the exact dependency source selected by `Project.toml` and `Manifest.toml`. The checker never treats the package's current `src` tree as the design authority. Treat `planned`, `exact`, and `covered` as confirmed; resolve every `missing` or `unknown` result. Then implement the design and align its generics, types, dependencies, `public` declarations, exports, and concrete restrictions. If the command is unavailable, read [the notation and checker reference](references/idiomatic-julia-check.md) for its install command.
 
 ### State Ownership and Operation Names
 

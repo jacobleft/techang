@@ -1,6 +1,6 @@
 # idiomatic-julia-check
 
-`idiomatic-julia-check` validates a deliberately small Julia-shaped design notation and can statically compare its typed function signatures with package source. It is a compiled Rust executable backed by Fatou's parser. It parses source but never evaluates it or starts Julia.
+`idiomatic-julia-check` is a semantic gate for a deliberately small Julia-shaped design note. It validates the note's verb-and-noun notation, builds its planned dispatch surface, and checks requirements against that surface and Manifest-bound dependencies. It is a compiled Rust executable backed by Fatou's parser. It parses source but never evaluates it or starts Julia.
 
 The tool requires and pins Rust 1.98.1.
 
@@ -16,16 +16,10 @@ Or install the command on `PATH`:
 cargo +1.98.1 install --locked --path tools/idiomatic-julia-check
 ```
 
-From a Julia package root, check its concept-only quoted Julia file:
+From a Julia package root, check its concept-only quoted Julia file during design:
 
 ```sh
-idiomatic-julia-check docs/design/IdiomaticJulia.jl
-```
-
-After implementing the design, report static API compatibility:
-
-```sh
-idiomatic-julia-check --api-report . docs/design/IdiomaticJulia.jl
+idiomatic-julia-check --semantic . docs/design/IdiomaticJulia.jl
 ```
 
 The standardized path is `<package-root>/docs/design/IdiomaticJulia.jl`, where `<package-root>` is a placeholder for the package's actual root directory.
@@ -41,7 +35,7 @@ end
 # Verb declarations
 const VERBS = quote
     verb(a::NounA, b; option::OptionNoun = default)::ResultNoun
-    mutate!(a, b)
+    mutate!(a::NounA, b::NounB)
 end
 
 # Representative composition
@@ -96,21 +90,27 @@ Supported control flow is `if`/`elseif`/`else`, `for`, `while`, `break`, and `co
 
 Outside function definitions, arbitrary expressions, nested calls, index arguments, macros, type definitions, unsupported assignment operators, and binding a result from `verb!` with plain `=` are rejected.
 
-## Static API report
+## Design-time semantic gate
 
-The API report extracts typed call declarations and long-form function signatures from the design note, then indexes method definitions in the package's `src/**/*.jl` files. It compares callable ownership, positional arity and types, varargs, keyword names, keyword types and default presence, explicit return annotations, and subtype coverage.
+The semantic gate reads declarations and requirements differently:
 
-The report uses four results:
+- A typed standalone call or long-form function signature declares a planned method.
+- An assignment whose right side is a call requires that call signature.
+- A value-only call requires a planned callable with the same argument shape.
+- A subtype line adds a relationship used when checking whether a broader method covers a requirement.
 
-- `exact`: the source declares the same signature.
-- `covered`: a broader declared method accepts the required typed arguments.
-- `missing`: no compatible declared method exists, or the qualified module is not the package or a direct dependency.
-- `unknown`: macros, `where` constraints, generated constructors, unresolved types, missing return annotations, or unavailable pinned source prevent a static conclusion.
+Package-owned declarations form a virtual dispatch surface directly from the note. The checker does not read the package's `src` directory, so a new package can pass before any implementation exists. A qualified declaration for a dependency represents a planned extension and requires the callable or type binding to exist in that dependency.
 
-`exact` and `covered` succeed. `missing` and `unknown` make the command exit with status `1` so an unproven signature cannot pass as compatible.
+Qualified dependency requirements are compared with statically declared methods in dependency source. The dependency must be direct in `Project.toml` and have a matching `Manifest.toml` record. Path dependencies use the recorded path. Registry and Git dependencies use the Manifest UUID and `git-tree-sha1` to locate the exact Julia depot version-slug directory; another installed version is never substituted. Only dependencies referenced by the design note are indexed.
 
-Dependency lookup is environment-bound. A qualified dependency must be listed in the package's `[deps]` and have a matching entry in `Manifest.toml`. Path dependencies use the recorded path. Registry and Git dependencies use the Manifest UUID and `git-tree-sha1` to locate Julia's exact version-slug directory under `JULIA_DEPOT_PATH`; the checker does not substitute another installed version. Only dependencies referenced by the design note are indexed.
+The gate reports:
 
-This is a static source report. It does not claim compatibility for methods created by macros, `eval`, package extensions, or other runtime generation.
+- `planned`: the note declares a valid package method or dependency extension.
+- `exact`: a requirement has the same signature as a planned or dependency method.
+- `covered`: a broader method covers the required types, or a value-only call has a matching callable and argument shape.
+- `missing`: the planned surface or pinned dependency has no compatible signature or binding.
+- `unknown`: static source cannot decide because of unavailable pinned source, macros, `eval`, package extensions, complex `where` constraints, generated constructors, or unresolved types.
 
-Exit status is `0` when every input is valid and every requested API signature is confirmed, `1` for invalid, unreadable, missing, or unknown results, and `2` for invalid command usage. Diagnostics use `path:line:column: message`.
+`planned`, `exact`, and `covered` succeed. `missing` and `unknown` make the command exit with status `1`. This result validates the internal semantics of the design note and its assumptions about pinned dependencies; it does not report whether a later implementation conforms to the note.
+
+Exit status is `0` when every input is valid and every semantic requirement is confirmed, `1` for invalid, unreadable, missing, or unknown results, and `2` for invalid command usage. Diagnostics use `path:line:column: message`.
